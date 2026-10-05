@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../Zuil.Core/Zuil.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- I2cDevice + GpioController. The Linux backend talks to /dev/i2c-N and
+         libgpiod, so this works on the Pi with no extra native dependency. -->
+    <PackageReference Include="System.Device.Gpio" Version="3.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

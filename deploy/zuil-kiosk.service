@@ -1,0 +1,40 @@
+[Unit]
+Description=Robot Zuil kiosk browser
+After=zuil.service graphical.target
+Wants=zuil.service
+
+[Service]
+Type=simple
+User=zuil
+# Separate unit from the backend on purpose: Chromium can be restarted (it will
+# leak memory over weeks of uptime) without dropping the backend and its cache.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/zuil/.Xauthority
+
+# Wait for the backend to answer before opening the browser, or the kiosk shows
+# a connection error as its first frame.
+ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:5000/api/health >/dev/null; do sleep 1; done'
+
+# Stop the screen blanking: there is nobody to wiggle the mouse in a lobby.
+ExecStartPre=/usr/bin/xset s off
+ExecStartPre=/usr/bin/xset -dpms
+ExecStartPre=/usr/bin/xset s noblank
+
+# --incognito so the previous visitor's name is not recoverable from the browser.
+ExecStart=/usr/bin/chromium-browser \
+  --kiosk \
+  --app=http://localhost:5000 \
+  --incognito \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --disable-pinch \
+  --overscroll-history-navigation=0 \
+  --check-for-update-interval=31536000 \
+  --password-store=basic
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,28 @@
+# .NET
+bin/
+obj/
+*.user
+artifacts/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Generated: the frontend build is copied in here by build/build.sh
+src/Zuil.Host/wwwroot/*
+!src/Zuil.Host/wwwroot/.gitkeep
+
+# Local state & secrets
+*.db
+*.db-shm
+*.db-wal
+config/appsettings.Production.json
+*.pfx
+*.pem
+*.key
+
+# PlatformIO
+firmware/esp32/.pio/
+
+# OS
+.DS_Store

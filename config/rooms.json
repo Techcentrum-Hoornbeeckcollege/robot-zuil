@@ -1,0 +1,56 @@
+// The six rooms this kiosk routes to.
+//
+// Read at startup from ./config next to the binary, so directions can be
+// corrected without a rebuild. SignalId must be unique: two rooms sharing an
+// indicator means the column points at the wrong place half the time, and
+// startup fails if you duplicate one.
+[
+  {
+    "id": "zaal-0-01",
+    "mailbox": "zaal-0-01@example.com",
+    "displayName": "Vergaderzaal 0.01",
+    "floor": "Begane grond",
+    "directions": "Rechtdoor langs de receptie, eerste deur links.",
+    "signalId": 1
+  },
+  {
+    "id": "zaal-0-02",
+    "mailbox": "zaal-0-02@example.com",
+    "displayName": "Vergaderzaal 0.02",
+    "floor": "Begane grond",
+    "directions": "Rechtdoor langs de receptie, tweede deur links.",
+    "signalId": 2
+  },
+  {
+    "id": "zaal-1-01",
+    "mailbox": "zaal-1-01@example.com",
+    "displayName": "Vergaderzaal 1.01",
+    "floor": "1e verdieping",
+    "directions": "Trap of lift naar de 1e verdieping, dan rechts.",
+    "signalId": 3
+  },
+  {
+    "id": "zaal-1-02",
+    "mailbox": "zaal-1-02@example.com",
+    "displayName": "Vergaderzaal 1.02",
+    "floor": "1e verdieping",
+    "directions": "Trap of lift naar de 1e verdieping, dan links aan het eind van de gang.",
+    "signalId": 4
+  },
+  {
+    "id": "zaal-2-01",
+    "mailbox": "zaal-2-01@example.com",
+    "displayName": "Vergaderzaal 2.01",
+    "floor": "2e verdieping",
+    "directions": "Lift naar de 2e verdieping, direct tegenover de lift.",
+    "signalId": 5
+  },
+  {
+    "id": "zaal-2-02",
+    "mailbox": "zaal-2-02@example.com",
+    "displayName": "Vergaderzaal 2.02",
+    "floor": "2e verdieping",
+    "directions": "Lift naar de 2e verdieping, dan rechts en aan het eind links.",
+    "signalId": 6
+  }
+]

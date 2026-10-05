@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain models and interfaces only. This project must never reference an
+       I/O library: no HTTP, no SQLite, no hardware. That is what keeps the
+       Graph / storage / device implementations swappable and testable. -->
+
+</Project>

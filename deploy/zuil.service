@@ -1,0 +1,37 @@
+[Unit]
+Description=Robot Zuil wayfinding kiosk backend
+# The app tolerates starting with no network (it serves its cache and retries),
+# but waiting avoids a guaranteed first-sync failure in the log.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=exec, not notify: notify would require the app to signal readiness via
+# the Microsoft.Extensions.Hosting.Systemd package. The kiosk unit waits on
+# /api/health instead, which is a truer readiness check anyway.
+Type=exec
+User=zuil
+# i2c access needs group membership, not root. Add the zuil user to i2c and gpio
+# rather than running a network-facing service as root.
+SupplementaryGroups=i2c gpio
+WorkingDirectory=/opt/zuil
+ExecStart=/opt/zuil/zuil
+Restart=always
+RestartSec=5
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_ENVIRONMENT=Production
+
+# The single-file binary extracts its native libraries here on first run; give
+# it a writable, predictable location instead of /tmp.
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/zuil/extract
+
+# Hardening. ReadWritePaths is what lets it write the SQLite cache while the
+# rest of the filesystem stays read-only.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/opt/zuil /var/cache/zuil
+
+[Install]
+WantedBy=multi-user.target

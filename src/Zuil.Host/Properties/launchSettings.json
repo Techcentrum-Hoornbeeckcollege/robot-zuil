@@ -1,0 +1,20 @@
+{
+  "profiles": {
+    "zuil-fake": {
+      "commandName": "Project",
+      "commandLineArgs": "--fake-calendar --fake-device --no-kiosk",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "http://localhost:5000"
+    },
+    "zuil-live": {
+      "commandName": "Project",
+      "commandLineArgs": "--no-kiosk",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "http://localhost:5000"
+    }
+  }
+}

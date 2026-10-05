@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../Zuil.Core/Zuil.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MSAL only, for the token. We deliberately do NOT use the Microsoft.Graph
+         SDK: it is large and reflection-heavy, which fights single-file publish,
+         and we need exactly one endpoint (/calendarView). -->
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.66.2" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Authors>robot-zuil</Authors>
+    <!-- Default deployment target. Override with -p:TargetRid=linux-x64 for an
+         x86_64 Ubuntu desktop; linux-arm64 is for a Raspberry Pi running
+         64-bit Ubuntu / Raspberry Pi OS. -->
+    <TargetRid Condition="'$(TargetRid)' == ''">linux-arm64</TargetRid>
+  </PropertyGroup>
+
+</Project>

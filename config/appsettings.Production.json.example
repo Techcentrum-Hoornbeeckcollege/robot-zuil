@@ -1,0 +1,22 @@
+{
+  "// NOTE": "Copy to appsettings.Production.json on the Pi and fill in. That file is gitignored: it holds a credential.",
+
+  "Graph": {
+    "TenantId": "00000000-0000-0000-0000-000000000000",
+    "ClientId": "00000000-0000-0000-0000-000000000000",
+
+    "// Auth": "Use a certificate, not a secret. A secret in a config file next to an unattended kiosk in a public building is a credential anyone with physical access can walk off with.",
+    "CertificatePath": "/opt/zuil/config/zuil-graph.pfx",
+    "CertificatePassword": "",
+
+    "// ClientSecret": "Development fallback only.",
+    "ClientSecret": null,
+
+    "TimeZone": "Europe/Amsterdam"
+  },
+
+  "Kiosk": {
+    "// LaunchBrowser": "false on the Pi: zuil-kiosk.service owns Chromium.",
+    "LaunchBrowser": false
+  }
+}
