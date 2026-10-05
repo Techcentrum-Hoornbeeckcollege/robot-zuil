@@ -1,10 +1,10 @@
 name: Enforce dev-to-main
- 
+
 on:
   pull_request:
     branches:
       - main
- 
+
 jobs:
   check-source:
     runs-on: ubuntu-latest
