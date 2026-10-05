@@ -1,0 +1,17 @@
+name: Enforce dev-to-main
+ 
+on:
+  pull_request:
+    branches:
+      - main
+ 
+jobs:
+  check-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+          echo "Only dev may be merged into main"
+          exit 1
+          fi
