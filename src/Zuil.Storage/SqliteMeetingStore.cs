@@ -146,6 +146,59 @@ public sealed class SqliteMeetingStore : IMeetingStore
         });
     }
 
+    public async Task<IReadOnlyList<Meeting>> GetUpcomingAsync(
+        DateTimeOffset now,
+        TimeSpan lookahead,
+        int limit,
+        CancellationToken ct)
+    {
+        // room_id as the tiebreaker so two meetings starting at the same minute
+        // keep the same order across refreshes, instead of the list reshuffling
+        // under a visitor's eyes every time the cache updates.
+        //
+        // ix_meeting_start (migration 002) serves this ordering;
+        // ix_meeting_room_start cannot, since its leading column is room_id.
+        const string sql = """
+            SELECT id, room_id, subject, start_utc, end_utc, is_cancelled
+              FROM meeting
+             WHERE is_cancelled = 0
+               AND end_utc   > $now
+               AND start_utc < $until
+             ORDER BY start_utc, room_id
+             LIMIT $limit;
+            """;
+
+        return await QueryMeetingsAsync(sql, ct, cmd =>
+        {
+            cmd.Parameters.AddWithValue("$now", Iso(now));
+            cmd.Parameters.AddWithValue("$until", Iso(now + lookahead));
+            cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 500));
+        });
+    }
+
+    public async Task<IReadOnlyList<Meeting>> GetWindowAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct)
+    {
+        // Overlap, not containment: a meeting that began before the window
+        // starts is still on in the room a visitor is standing in front of.
+        const string sql = """
+            SELECT id, room_id, subject, start_utc, end_utc, is_cancelled
+              FROM meeting
+             WHERE is_cancelled = 0
+               AND end_utc   > $from
+               AND start_utc < $to
+             ORDER BY room_id, start_utc;
+            """;
+
+        return await QueryMeetingsAsync(sql, ct, cmd =>
+        {
+            cmd.Parameters.AddWithValue("$from", Iso(from));
+            cmd.Parameters.AddWithValue("$to", Iso(to));
+        });
+    }
+
     public async Task<SyncStatus> GetSyncStatusAsync(CancellationToken ct)
     {
         await using var cmd = _db.Connection.CreateCommand();

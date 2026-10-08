@@ -183,6 +183,7 @@ app.UseRateLimiter();
 
 app.MapSearchEndpoints();
 app.MapRoomEndpoints();
+app.MapAgendaEndpoints();
 app.MapDeviceEndpoints();
 app.MapHealthEndpoints();
 app.MapAdminEndpoints();
