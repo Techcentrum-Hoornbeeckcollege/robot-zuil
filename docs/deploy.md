@@ -32,14 +32,34 @@ ssh zuil-pi 'sudo /tmp/zuil-deploy/install.sh /tmp/zuil-build'
 ```
 
 That creates the `zuil` user, grants i2c/gpio access, enables the bus, installs
-to `/opt/zuil`, and sets up both systemd units.
+to `/opt/zuil`, sets up both systemd units, and **generates a random admin
+password into `/etc/zuil/zuil.env`, printing it once**. Write it down.
 
-Then fill in the credentials and start:
+Then start it:
 
 ```bash
-sudo nano /opt/zuil/config/appsettings.Production.json
 sudo systemctl start zuil zuil-kiosk
 ```
+
+## First run, at the kiosk itself
+
+Nothing else needs editing over SSH. The kiosk starts with no Outlook
+credentials, says so, and waits — it does not fail in a loop.
+
+1. Hold the **bottom-right corner** of the screen for **three seconds**.
+2. Log in with the generated password.
+3. **Outlook** — tenant id, client id, client secret, then *Opslaan en testen*.
+4. **Zalen** — check the rooms seeded from `config/rooms.json`, and the
+   indicator numbers against the physical build.
+
+The first sync happens within a second or two of saving the credentials, not at
+the next interval. See [admin.md](admin.md) for the rest of the panel.
+
+If this device previously ran a build without the admin panel, its existing
+`config/appsettings.Production.json` and `config/rooms.json` are imported on the
+first start — client secret included, encrypted on the way in — so it behaves
+exactly as before. Afterwards, remove `Graph:ClientSecret` from that file; it is
+no longer read.
 
 ## Updating
 
@@ -49,8 +69,29 @@ sudo cp -r /tmp/zuil-build/zuil /opt/zuil/zuil
 sudo systemctl start zuil zuil-kiosk
 ```
 
-`config/` is left alone on purpose, so an update never clobbers the room
-directions or the certificate.
+Copy **only the binary**. `/opt/zuil/config/`, `/opt/zuil/zuil-cache.db` and
+`/opt/zuil/secret.key` must all survive an update: the database holds every
+setting and the encrypted Outlook credential, and `secret.key` is what decrypts
+it. Overwriting either loses the credential and an administrator has to re-enter
+it.
+
+Schema changes are applied automatically at startup and are written to be
+idempotent, so there is no migration step.
+
+## Backups
+
+```bash
+sudo systemctl stop zuil
+sudo tar czf zuil-backup.tar.gz -C /opt/zuil zuil-cache.db secret.key config
+sudo systemctl start zuil
+```
+
+**Both files, together.** Either one alone cannot recover the Outlook
+credential. And treat the result as sensitive: `zuil-cache.db` holds a
+credential and recent attendee names.
+
+If `secret.key` is lost, the kiosk reports Outlook as not configured and waits
+for someone to re-enter the secret. It does not crash.
 
 ## Checks
 

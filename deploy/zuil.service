@@ -21,12 +21,23 @@ RestartSec=5
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=ASPNETCORE_ENVIRONMENT=Production
 
+# The admin password, in a 0600 file rather than an Environment= line here:
+# `systemctl cat` is world-readable. deploy/install.sh generates it. Optional so
+# the service still starts on a device set up before this existed, where the
+# password comes from appsettings.Production.json instead.
+EnvironmentFile=-/etc/zuil/zuil.env
+
 # The single-file binary extracts its native libraries here on first run; give
 # it a writable, predictable location instead of /tmp.
 Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/zuil/extract
 
-# Hardening. ReadWritePaths is what lets it write the SQLite cache while the
-# rest of the filesystem stays read-only.
+# Hardening. ReadWritePaths is what lets it write the SQLite cache, and
+# secret.key beside it, while the rest of the filesystem stays read-only.
+#
+# Note ProtectHome=true: it makes ~/.aspnet/DataProtection-Keys unwritable,
+# which is why the Graph secret is encrypted with an explicit key file and admin
+# sessions are in-process rather than Data Protection cookies. Both would have
+# silently fallen back to ephemeral keys here.
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

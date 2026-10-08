@@ -40,11 +40,25 @@ chown -R zuil:zuil "$DEST" /var/cache/zuil
 if [ ! -f "$DEST/config/appsettings.Production.json" ]; then
   cp "$DEST/config/appsettings.Production.json.example" \
      "$DEST/config/appsettings.Production.json"
-  echo "    !! Edit $DEST/config/appsettings.Production.json before starting."
 fi
-# The file holds a credential path and password; keep it off other accounts.
+# The file may hold a certificate password; keep it off other accounts.
 chmod 600 "$DEST/config/appsettings.Production.json"
 chown zuil:zuil "$DEST/config/appsettings.Production.json"
+
+echo "==> Setting an admin password"
+# In an EnvironmentFile rather than the unit, because `systemctl cat` is
+# world-readable and this file is 0600. The shipped default is 12345678, which
+# anyone who has read this project knows, and the kiosk's own browser can reach
+# /api/admin — so a generated password is the difference between a locked
+# settings panel and an open one.
+mkdir -p /etc/zuil
+if [ ! -f /etc/zuil/zuil.env ]; then
+  ADMIN_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+  printf 'ZUIL_Admin__Password=%s\n' "$ADMIN_PASSWORD" > /etc/zuil/zuil.env
+  GENERATED_PASSWORD="$ADMIN_PASSWORD"
+fi
+chmod 600 /etc/zuil/zuil.env
+chown root:root /etc/zuil/zuil.env
 
 echo "==> Checking the clock"
 # A Pi has no RTC. If NTP never syncs, a wayfinding kiosk shows the wrong
@@ -60,3 +74,18 @@ systemctl enable zuil.service zuil-kiosk.service
 echo
 echo "Done. Start with:  systemctl start zuil zuil-kiosk"
 echo "Logs:              journalctl -u zuil -f"
+echo
+
+if [ -n "${GENERATED_PASSWORD:-}" ]; then
+  echo "Admin password:    $GENERATED_PASSWORD"
+  echo "                   Written to /etc/zuil/zuil.env. This is the only time"
+  echo "                   it is printed, so write it down now."
+  echo
+fi
+
+echo "Then, at the kiosk itself:"
+echo "  1. Hold the bottom-right corner of the screen for three seconds."
+echo "  2. Log in and fill in Outlook: tenant, client id and client secret."
+echo "  3. Check the rooms under Zalen."
+echo "See docs/admin.md. Back up $DEST/zuil-cache.db and $DEST/secret.key together:"
+echo "either one alone cannot recover the Outlook credential."
