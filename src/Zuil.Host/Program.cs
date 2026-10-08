@@ -1,10 +1,15 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Reflection;
+using System.Threading.RateLimiting;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Admin;
 using Zuil.Device;
 using Zuil.Graph;
 using Zuil.Host;
+using Zuil.Host.Admin;
 using Zuil.Host.Endpoints;
 using Zuil.Host.Hubs;
 using Zuil.Host.Settings;
@@ -40,6 +45,11 @@ builder.Services.Configure<StorageOptions>(
 builder.Services.Configure<KioskOptions>(
     builder.Configuration.GetSection(KioskOptions.SectionName));
 
+// The admin password stays in configuration, not the database: a password a
+// visitor could change from the touchscreen is not a password.
+builder.Services.Configure<AdminOptions>(
+    builder.Configuration.GetSection(AdminOptions.SectionName));
+
 // The certificate escape hatch stays file-only and wins over a stored secret,
 // so a site already following docs/outlook-setup.md loses nothing by upgrading.
 builder.Services.Configure<GraphCredentialOptions>(
@@ -68,6 +78,29 @@ builder.Services.AddSingleton<IGraphCredentialSource>(
     sp => sp.GetRequiredService<SqliteSettingsStore>());
 builder.Services.AddSingleton<ISettingsProvider, SettingsProvider>();
 
+// Admin sessions are in-process, so a restart signs everyone out. On a machine
+// in a lobby that is a feature.
+builder.Services.AddSingleton(sp => new AdminSessionStore(
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<IOptions<AdminOptions>>().Value.SessionIdleTimeout));
+
+// Login is the one route worth rate limiting. Shared-framework feature, so no
+// package reference; the persistent lockout in the database is the part that
+// survives a power cycle.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AdminEndpoints.LoginRateLimitPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+            }));
+});
+
 // Room directory: a snapshot over the settings provider, rebuilt whenever an
 // administrator edits the rooms. config/rooms.json is only the first-run seed.
 builder.Services.AddSingleton<IRoomDirectory, SqliteBackedRoomDirectory>();
@@ -77,6 +110,11 @@ builder.Services.AddSingleton<IMeetingStore, SqliteMeetingStore>();
 // The token provider is registered either way: the admin panel's "test
 // connection" needs it even on a kiosk started with --fake-calendar.
 builder.Services.AddSingleton<GraphTokenProvider>();
+
+// Registered even under --fake-calendar: "test connection" in the admin panel
+// exists precisely to exercise the real path.
+builder.Services.AddHttpClient<GraphConnectionTester>()
+    .SetHandlerLifetime(TimeSpan.FromMinutes(10));
 
 if (useFakeCalendar)
 {
@@ -141,10 +179,13 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
+app.UseRateLimiter();
+
 app.MapSearchEndpoints();
 app.MapRoomEndpoints();
 app.MapDeviceEndpoints();
 app.MapHealthEndpoints();
+app.MapAdminEndpoints();
 app.MapHub<StatusHub>("/hub/status");
 
 // SPA fallback: any non-API route hands back index.html so client-side routing
@@ -200,7 +241,7 @@ app.Run();
 static void LaunchKiosk(WebApplication app)
 {
     var options = app.Services
-        .GetRequiredService<Microsoft.Extensions.Options.IOptions<KioskOptions>>().Value;
+        .GetRequiredService<IOptions<KioskOptions>>().Value;
 
     if (!options.LaunchBrowser)
     {
