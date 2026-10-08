@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+using Zuil.Core.Abstractions;
 
 namespace Zuil.Device;
 
@@ -20,17 +20,20 @@ public sealed class CommandPolicy
         DeviceCommand.ReadEvent,
     ];
 
-    private readonly int _maxPerSecond;
+    private readonly ISettingsProvider _settings;
     private readonly Lock _gate = new();
     private readonly Queue<DateTimeOffset> _recent = new();
 
-    public CommandPolicy(IOptions<DeviceOptions> options) =>
-        _maxPerSecond = options.Value.MaxCommandsPerSecond;
+    public CommandPolicy(ISettingsProvider settings) => _settings = settings;
 
     public bool IsAllowed(DeviceCommand command) => Allowed.Contains(command);
 
     public bool TryAcquire(DateTimeOffset now)
     {
+        // Read inside the lock rather than cached in the constructor, so raising
+        // the limit in the admin panel takes effect on the next command.
+        var maxPerSecond = Math.Max(1, _settings.Current.Device.MaxCommandsPerSecond);
+
         lock (_gate)
         {
             while (_recent.Count > 0 && now - _recent.Peek() > TimeSpan.FromSeconds(1))
@@ -38,7 +41,7 @@ public sealed class CommandPolicy
                 _recent.Dequeue();
             }
 
-            if (_recent.Count >= _maxPerSecond)
+            if (_recent.Count >= maxPerSecond)
             {
                 return false;
             }

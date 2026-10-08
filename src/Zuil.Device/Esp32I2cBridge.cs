@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Device.Gpio;
 using System.Device.I2c;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Settings;
 
 namespace Zuil.Device;
 
@@ -21,7 +21,14 @@ namespace Zuil.Device;
 /// </summary>
 public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 {
-    private readonly DeviceOptions _options;
+    // The bus, the address and the attention pin as they were at startup.
+    // Re-opening an I2cDevice and re-registering GPIO callbacks while the kiosk
+    // is serving is a new failure mode on a wall-mounted machine for near-zero
+    // benefit, so those three need a restart; the admin panel badges them as
+    // such. Timing and retries are read live, below.
+    private readonly DeviceSettings _startup;
+
+    private readonly ISettingsProvider _settings;
     private readonly CommandPolicy _policy;
     private readonly ILogger<Esp32I2cBridge> _logger;
 
@@ -33,17 +40,18 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
     private readonly SemaphoreSlim _busLock = new(1, 1);
 
     public Esp32I2cBridge(
-        IOptions<DeviceOptions> options,
+        ISettingsProvider settings,
         CommandPolicy policy,
         ILogger<Esp32I2cBridge> logger)
     {
-        _options = options.Value;
+        _settings = settings;
+        _startup = settings.Current.Device;
         _policy = policy;
         _logger = logger;
 
-        _device = I2cDevice.Create(new I2cConnectionSettings(_options.BusId, _options.Address));
+        _device = I2cDevice.Create(new I2cConnectionSettings(_startup.BusId, _startup.Address));
 
-        if (_options.AttentionPin is { } pin)
+        if (_startup.AttentionPin is { } pin)
         {
             _gpio = new GpioController();
             _gpio.OpenPin(pin, PinMode.InputPullUp);
@@ -89,10 +97,15 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 
         var frame = Framing.Encode(command, payload);
 
+        // One snapshot per transfer: an administrator raising the retry count
+        // mid-transfer must not change the bound the loop is already running to.
+        var device = _settings.Current.Device;
+        var maxRetries = Math.Max(1, device.MaxRetries);
+
         await _busLock.WaitAsync(ct);
         try
         {
-            for (var attempt = 1; attempt <= _options.MaxRetries; attempt++)
+            for (var attempt = 1; attempt <= maxRetries; attempt++)
             {
                 try
                 {
@@ -104,7 +117,7 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
                     }
 
                     // Give the slave time to prepare its reply.
-                    await Task.Delay(_options.ResponseDelay, ct);
+                    await Task.Delay(device.ResponseDelay, ct);
 
                     var buffer = new byte[Framing.MaxFrame];
                     _device.Read(buffer);
@@ -121,9 +134,9 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 
                     _logger.LogWarning(
                         "Bad frame from device on attempt {Attempt}/{Max} for {Command}",
-                        attempt, _options.MaxRetries, command);
+                        attempt, maxRetries, command);
                 }
-                catch (IOException ex) when (attempt < _options.MaxRetries)
+                catch (IOException ex) when (attempt < maxRetries)
                 {
                     // Typical on an ESP32 slave under load: NACK or bus error.
                     _logger.LogWarning(
@@ -168,7 +181,7 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 
     public void Dispose()
     {
-        if (_options.AttentionPin is { } pin && _gpio is not null)
+        if (_startup.AttentionPin is { } pin && _gpio is not null)
         {
             _gpio.UnregisterCallbackForPinValueChangedEvent(pin, OnAttentionAsserted);
             _gpio.Dispose();

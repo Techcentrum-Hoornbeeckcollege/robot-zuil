@@ -32,15 +32,11 @@ builder.Configuration
         reloadOnChange: true)
     .AddEnvironmentVariables("ZUIL_");
 
-builder.Services.AddOptions<GraphOptions>()
-    .Bind(builder.Configuration.GetSection(GraphOptions.SectionName))
-    .ValidateOnStart();
+// Graph credentials, sync timing and device parameters now live in the database
+// and are edited from the admin panel, so they are no longer bound here. What
+// remains in configuration is what cannot change without a restart anyway.
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
-builder.Services.Configure<DeviceOptions>(
-    builder.Configuration.GetSection(DeviceOptions.SectionName));
-builder.Services.Configure<SyncOptions>(
-    builder.Configuration.GetSection(SyncOptions.SectionName));
 builder.Services.Configure<KioskOptions>(
     builder.Configuration.GetSection(KioskOptions.SectionName));
 
@@ -72,16 +68,15 @@ builder.Services.AddSingleton<IGraphCredentialSource>(
     sp => sp.GetRequiredService<SqliteSettingsStore>());
 builder.Services.AddSingleton<ISettingsProvider, SettingsProvider>();
 
-// Room directory: read once at startup, and fail fast if it is missing or
-// inconsistent rather than serving a kiosk that points nowhere.
-builder.Services.AddSingleton<IRoomDirectory>(sp =>
-{
-    var logger = sp.GetRequiredService<ILogger<RoomDirectory>>();
-    var path = Path.Combine(configDir, "rooms.json");
-    return RoomDirectory.LoadFromFile(path, logger);
-});
+// Room directory: a snapshot over the settings provider, rebuilt whenever an
+// administrator edits the rooms. config/rooms.json is only the first-run seed.
+builder.Services.AddSingleton<IRoomDirectory, SqliteBackedRoomDirectory>();
 
 builder.Services.AddSingleton<IMeetingStore, SqliteMeetingStore>();
+
+// The token provider is registered either way: the admin panel's "test
+// connection" needs it even on a kiosk started with --fake-calendar.
+builder.Services.AddSingleton<GraphTokenProvider>();
 
 if (useFakeCalendar)
 {
@@ -89,7 +84,6 @@ if (useFakeCalendar)
 }
 else
 {
-    builder.Services.AddSingleton<GraphTokenProvider>();
     builder.Services.AddHttpClient<ICalendarSource, CalendarViewClient>()
         .SetHandlerLifetime(TimeSpan.FromMinutes(10));
 }
@@ -107,7 +101,10 @@ else
     builder.Services.AddSingleton<IDeviceBridge, Esp32I2cBridge>();
 }
 
-builder.Services.AddHostedService<CalendarSyncWorker>();
+// Registered as a singleton as well as a hosted service, so the admin panel's
+// "Nu synchroniseren" can wake the very instance the host is running.
+builder.Services.AddSingleton<CalendarSyncWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CalendarSyncWorker>());
 
 var app = builder.Build();
 

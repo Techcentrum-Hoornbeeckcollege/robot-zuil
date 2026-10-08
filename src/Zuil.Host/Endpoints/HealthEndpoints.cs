@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Options;
 using Zuil.Core.Abstractions;
-using Zuil.Host.Workers;
 
 namespace Zuil.Host.Endpoints;
 
@@ -14,7 +12,7 @@ public static class HealthEndpoints
             IMeetingStore store,
             IDeviceBridge device,
             IClock clock,
-            IOptions<SyncOptions> sync,
+            ISettingsProvider settings,
             CancellationToken ct) =>
         {
             var status = await store.GetSyncStatusAsync(ct);
@@ -28,7 +26,7 @@ public static class HealthEndpoints
                 lastAttemptedSync = status.LastAttemptedSync,
                 lastError = status.LastError,
                 meetingCount = status.MeetingCount,
-                stale = status.IsStale(clock.Now, sync.Value.StaleAfter),
+                stale = status.IsStale(clock.Now, settings.Current.Sync.StaleAfter),
             });
         });
     }

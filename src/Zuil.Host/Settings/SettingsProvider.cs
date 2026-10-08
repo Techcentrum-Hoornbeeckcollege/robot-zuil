@@ -4,30 +4,6 @@ using Zuil.Core.Settings;
 namespace Zuil.Host.Settings;
 
 /// <summary>
-/// Hands out the current <see cref="KioskSettings"/> and says when they change.
-/// </summary>
-public interface ISettingsProvider
-{
-    /// <summary>
-    /// The settings as of now. A reference to an immutable snapshot, so a caller
-    /// that reads this once and uses it throughout an operation is guaranteed a
-    /// consistent view — which is how the sync worker avoids mixing two room
-    /// lists into one cache swap.
-    /// </summary>
-    KioskSettings Current { get; }
-
-    /// <summary>
-    /// Raised after <see cref="ReloadAsync"/> has swapped in new settings.
-    /// Subscribers rebuild derived state: the room directory, the MSAL client,
-    /// the sync timer.
-    /// </summary>
-    event EventHandler? Changed;
-
-    /// <summary>Re-reads from the store and raises <see cref="Changed"/>.</summary>
-    Task ReloadAsync(CancellationToken ct);
-}
-
-/// <summary>
 /// The live settings snapshot.
 ///
 /// A plain volatile field rather than an IConfigurationSource over SQLite, which
