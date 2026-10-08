@@ -7,6 +7,7 @@ using Zuil.Graph;
 using Zuil.Host;
 using Zuil.Host.Endpoints;
 using Zuil.Host.Hubs;
+using Zuil.Host.Settings;
 using Zuil.Host.Workers;
 using Zuil.Storage;
 
@@ -43,8 +44,33 @@ builder.Services.Configure<SyncOptions>(
 builder.Services.Configure<KioskOptions>(
     builder.Configuration.GetSection(KioskOptions.SectionName));
 
+// The certificate escape hatch stays file-only and wins over a stored secret,
+// so a site already following docs/outlook-setup.md loses nothing by upgrading.
+builder.Services.Configure<GraphCredentialOptions>(
+    builder.Configuration.GetSection(GraphCredentialOptions.SectionName));
+
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IClock, SystemClock>();
+
+// One connection and one write lock, shared by both stores. A second connection
+// would reintroduce the SQLITE_BUSY contention this arrangement avoids.
+builder.Services.AddSingleton<ZuilDatabase>();
+
+// The key lives beside the database, not in the single-file extraction
+// directory, which is versioned per binary hash and wiped on the next deploy.
+builder.Services.AddSingleton(sp => new AesGcmSecretProtector(
+    sp.GetRequiredService<ZuilDatabase>().SecretKeyPath,
+    sp.GetRequiredService<ILogger<AesGcmSecretProtector>>()));
+
+// One instance behind two interfaces: ISettingsStore is what the admin panel
+// gets and cannot read the Graph secret, IGraphCredentialSource is the only
+// thing that can. See the comments on those interfaces.
+builder.Services.AddSingleton<SqliteSettingsStore>();
+builder.Services.AddSingleton<ISettingsStore>(
+    sp => sp.GetRequiredService<SqliteSettingsStore>());
+builder.Services.AddSingleton<IGraphCredentialSource>(
+    sp => sp.GetRequiredService<SqliteSettingsStore>());
+builder.Services.AddSingleton<ISettingsProvider, SettingsProvider>();
 
 // Room directory: read once at startup, and fail fast if it is missing or
 // inconsistent rather than serving a kiosk that points nowhere.
@@ -84,6 +110,18 @@ else
 builder.Services.AddHostedService<CalendarSyncWorker>();
 
 var app = builder.Build();
+
+// Settings live in the database now. Carry an existing install's config files
+// across on the first boot, then load the snapshot everything else reads from.
+// Both before the sync worker's first pass, so it never runs against defaults.
+await FirstRunSeeder.SeedAsync(
+    app.Services.GetRequiredService<ISettingsStore>(),
+    builder.Configuration,
+    Path.Combine(configDir, "rooms.json"),
+    app.Services.GetRequiredService<ILogger<Program>>(),
+    CancellationToken.None);
+
+await app.Services.GetRequiredService<ISettingsProvider>().ReloadAsync(CancellationToken.None);
 
 // The frontend is served from embedded resources, which is what makes the
 // deployable a single file rather than a binary plus a wwwroot folder.

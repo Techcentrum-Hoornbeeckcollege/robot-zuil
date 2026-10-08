@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using System.Globalization;
 using Zuil.Core.Abstractions;
 using Zuil.Core.Models;
 
@@ -9,41 +9,20 @@ namespace Zuil.Storage;
 /// <summary>
 /// The kiosk's read model. Single-writer (the sync worker) and many readers (HTTP
 /// requests), which is exactly what SQLite in WAL mode is good at.
+///
+/// The connection and the write lock live in <see cref="ZuilDatabase"/> rather
+/// than here, so the settings store shares them instead of opening a second
+/// connection and reintroducing SQLITE_BUSY contention.
 /// </summary>
-public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
+public sealed class SqliteMeetingStore : IMeetingStore
 {
-    private readonly SqliteConnection _connection;
+    private readonly ZuilDatabase _db;
     private readonly ILogger<SqliteMeetingStore> _logger;
 
-    // Serializes writes. SQLite would serialize them anyway; doing it here turns
-    // lock contention into an await instead of a SQLITE_BUSY exception.
-    private readonly SemaphoreSlim _writeLock = new(1, 1);
-
-    public SqliteMeetingStore(
-        IOptions<StorageOptions> options,
-        ILogger<SqliteMeetingStore> logger)
+    public SqliteMeetingStore(ZuilDatabase db, ILogger<SqliteMeetingStore> logger)
     {
+        _db = db;
         _logger = logger;
-
-        var builder = new SqliteConnectionStringBuilder
-        {
-            DataSource = options.Value.DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-            Pooling = true,
-        };
-
-        _connection = new SqliteConnection(builder.ToString());
-        _connection.Open();
-
-        using (var pragma = _connection.CreateCommand())
-        {
-            // WAL so a long sync write never blocks a visitor's search.
-            pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;";
-            pragma.ExecuteNonQuery();
-        }
-
-        SchemaInitializer.Apply(_connection, logger);
     }
 
     public async Task ReplaceWindowAsync(
@@ -52,73 +31,67 @@ public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
         IReadOnlyList<Meeting> meetings,
         CancellationToken ct)
     {
-        await _writeLock.WaitAsync(ct);
-        try
+        using var lease = await _db.AcquireWriteAsync(ct);
+
+        // One transaction for the whole swap: readers see either the old
+        // window or the new one, never a partially rebuilt cache.
+        await using var tx = (SqliteTransaction)await _db.Connection.BeginTransactionAsync(ct);
+
+        await ExecuteAsync(tx, "DELETE FROM attendee;", ct);
+        await ExecuteAsync(tx, "DELETE FROM meeting;", ct);
+
+        foreach (var meeting in meetings)
         {
-            // One transaction for the whole swap: readers see either the old
-            // window or the new one, never a partially rebuilt cache.
-            await using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(ct);
+            await using var insert = _db.Connection.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = """
+                INSERT INTO meeting (id, room_id, subject, start_utc, end_utc, is_cancelled)
+                VALUES ($id, $room, $subject, $start, $end, $cancelled);
+                """;
+            insert.Parameters.AddWithValue("$id", meeting.Id);
+            insert.Parameters.AddWithValue("$room", meeting.RoomId);
+            insert.Parameters.AddWithValue("$subject", (object?)meeting.Subject ?? DBNull.Value);
+            insert.Parameters.AddWithValue("$start", Iso(meeting.Start));
+            insert.Parameters.AddWithValue("$end", Iso(meeting.End));
+            insert.Parameters.AddWithValue("$cancelled", meeting.IsCancelled ? 1 : 0);
+            await insert.ExecuteNonQueryAsync(ct);
 
-            await ExecuteAsync(tx, "DELETE FROM attendee;", ct);
-            await ExecuteAsync(tx, "DELETE FROM meeting;", ct);
-
-            foreach (var meeting in meetings)
+            foreach (var attendee in meeting.Attendees)
             {
-                await using var insert = _connection.CreateCommand();
-                insert.Transaction = tx;
-                insert.CommandText = """
-                    INSERT INTO meeting (id, room_id, subject, start_utc, end_utc, is_cancelled)
-                    VALUES ($id, $room, $subject, $start, $end, $cancelled);
+                await using var ins = _db.Connection.CreateCommand();
+                ins.Transaction = tx;
+                ins.CommandText = """
+                    INSERT INTO attendee (room_id, meeting_id, name, normalized_name)
+                    VALUES ($room, $meeting, $name, $normalized);
                     """;
-                insert.Parameters.AddWithValue("$id", meeting.Id);
-                insert.Parameters.AddWithValue("$room", meeting.RoomId);
-                insert.Parameters.AddWithValue("$subject", (object?)meeting.Subject ?? DBNull.Value);
-                insert.Parameters.AddWithValue("$start", Iso(meeting.Start));
-                insert.Parameters.AddWithValue("$end", Iso(meeting.End));
-                insert.Parameters.AddWithValue("$cancelled", meeting.IsCancelled ? 1 : 0);
-                await insert.ExecuteNonQueryAsync(ct);
-
-                foreach (var attendee in meeting.Attendees)
-                {
-                    await using var ins = _connection.CreateCommand();
-                    ins.Transaction = tx;
-                    ins.CommandText = """
-                        INSERT INTO attendee (room_id, meeting_id, name, normalized_name)
-                        VALUES ($room, $meeting, $name, $normalized);
-                        """;
-                    ins.Parameters.AddWithValue("$room", meeting.RoomId);
-                    ins.Parameters.AddWithValue("$meeting", meeting.Id);
-                    ins.Parameters.AddWithValue("$name", attendee.Name);
-                    ins.Parameters.AddWithValue("$normalized", attendee.NormalizedName);
-                    await ins.ExecuteNonQueryAsync(ct);
-                }
+                ins.Parameters.AddWithValue("$room", meeting.RoomId);
+                ins.Parameters.AddWithValue("$meeting", meeting.Id);
+                ins.Parameters.AddWithValue("$name", attendee.Name);
+                ins.Parameters.AddWithValue("$normalized", attendee.NormalizedName);
+                await ins.ExecuteNonQueryAsync(ct);
             }
-
-            await using (var state = _connection.CreateCommand())
-            {
-                state.Transaction = tx;
-                state.CommandText = """
-                    UPDATE sync_state
-                       SET last_success_utc = $now,
-                           last_attempt_utc = $now,
-                           last_error       = NULL,
-                           window_start_utc = $start,
-                           window_end_utc   = $end
-                     WHERE id = 1;
-                    """;
-                state.Parameters.AddWithValue("$now", Iso(DateTimeOffset.UtcNow));
-                state.Parameters.AddWithValue("$start", Iso(windowStart));
-                state.Parameters.AddWithValue("$end", Iso(windowEnd));
-                await state.ExecuteNonQueryAsync(ct);
-            }
-
-            await tx.CommitAsync(ct);
-            _logger.LogInformation("Cache replaced with {Count} occurrences", meetings.Count);
         }
-        finally
+
+        await using (var state = _db.Connection.CreateCommand())
         {
-            _writeLock.Release();
+            state.Transaction = tx;
+            state.CommandText = """
+                UPDATE sync_state
+                   SET last_success_utc = $now,
+                       last_attempt_utc = $now,
+                       last_error       = NULL,
+                       window_start_utc = $start,
+                       window_end_utc   = $end
+                 WHERE id = 1;
+                """;
+            state.Parameters.AddWithValue("$now", Iso(DateTimeOffset.UtcNow));
+            state.Parameters.AddWithValue("$start", Iso(windowStart));
+            state.Parameters.AddWithValue("$end", Iso(windowEnd));
+            await state.ExecuteNonQueryAsync(ct);
         }
+
+        await tx.CommitAsync(ct);
+        _logger.LogInformation("Cache replaced with {Count} occurrences", meetings.Count);
     }
 
     public async Task<IReadOnlyList<Meeting>> FindByAttendeeAsync(
@@ -175,7 +148,7 @@ public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
 
     public async Task<SyncStatus> GetSyncStatusAsync(CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             SELECT s.last_success_utc,
                    s.last_attempt_utc,
@@ -202,44 +175,32 @@ public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
 
     public async Task RecordSyncAttemptAsync(DateTimeOffset at, string? error, CancellationToken ct)
     {
-        await _writeLock.WaitAsync(ct);
-        try
-        {
-            await using var cmd = _connection.CreateCommand();
-            cmd.CommandText = """
-                UPDATE sync_state
-                   SET last_attempt_utc = $at,
-                       last_error       = $error
-                 WHERE id = 1;
-                """;
-            cmd.Parameters.AddWithValue("$at", Iso(at));
-            cmd.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
-        finally
-        {
-            _writeLock.Release();
-        }
+        using var lease = await _db.AcquireWriteAsync(ct);
+
+        await using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE sync_state
+               SET last_attempt_utc = $at,
+                   last_error       = $error
+             WHERE id = 1;
+            """;
+        cmd.Parameters.AddWithValue("$at", Iso(at));
+        cmd.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task PurgeBeforeAsync(DateTimeOffset before, CancellationToken ct)
     {
-        await _writeLock.WaitAsync(ct);
-        try
-        {
-            await using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM meeting WHERE end_utc < $before;";
-            cmd.Parameters.AddWithValue("$before", Iso(before));
-            var removed = await cmd.ExecuteNonQueryAsync(ct);
+        using var lease = await _db.AcquireWriteAsync(ct);
 
-            if (removed > 0)
-            {
-                _logger.LogDebug("Purged {Count} finished occurrences", removed);
-            }
-        }
-        finally
+        await using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM meeting WHERE end_utc < $before;";
+        cmd.Parameters.AddWithValue("$before", Iso(before));
+        var removed = await cmd.ExecuteNonQueryAsync(ct);
+
+        if (removed > 0)
         {
-            _writeLock.Release();
+            _logger.LogDebug("Purged {Count} finished occurrences", removed);
         }
     }
 
@@ -248,7 +209,7 @@ public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
         CancellationToken ct,
         Action<SqliteCommand> bind)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = sql;
         bind(cmd);
 
@@ -277,21 +238,15 @@ public sealed class SqliteMeetingStore : IMeetingStore, IDisposable
 
     private async Task ExecuteAsync(SqliteTransaction tx, string sql, CancellationToken ct)
     {
-        await using var cmd = _connection.CreateCommand();
+        await using var cmd = _db.Connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static string Iso(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+        value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 
     private static DateTimeOffset Parse(string value) =>
-        DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
-
-    public void Dispose()
-    {
-        _writeLock.Dispose();
-        _connection.Dispose();
-    }
+        DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }
