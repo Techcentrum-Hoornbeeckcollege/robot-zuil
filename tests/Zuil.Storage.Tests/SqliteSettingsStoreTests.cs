@@ -185,8 +185,8 @@ public class SqliteSettingsStoreTests
 
         var loaded = await db.Settings.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(2, loaded.Rooms.Single(r => r.Id == "a").SignalId);
-        Assert.Equal(1, loaded.Rooms.Single(r => r.Id == "b").SignalId);
+        Assert.Equal<byte>(2, loaded.Rooms.Single(r => r.Id == "a").SignalId);
+        Assert.Equal<byte>(1, loaded.Rooms.Single(r => r.Id == "b").SignalId);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public class SqliteSettingsStoreTests
 
         var loaded = await db.Settings.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(["zebra", "aardvark"], loaded.Rooms.Select(r => r.Id));
+        Assert.Equal(new[] { "zebra", "aardvark" }, loaded.Rooms.Select(r => r.Id).ToArray());
     }
 
     /// <summary>

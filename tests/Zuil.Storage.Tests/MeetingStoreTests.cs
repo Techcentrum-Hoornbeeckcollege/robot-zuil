@@ -19,7 +19,7 @@ public class MeetingStoreTests
         int lengthMinutes = 30,
         string? subject = null,
         bool cancelled = false,
-        params string[] attendees) => new()
+        string[]? attendees = null) => new()
         {
             Id = id,
             RoomId = roomId,
@@ -27,7 +27,7 @@ public class MeetingStoreTests
             Start = Now.AddMinutes(startsInMinutes),
             End = Now.AddMinutes(startsInMinutes + lengthMinutes),
             IsCancelled = cancelled,
-            Attendees = [.. attendees.Select(name => new Attendee
+            Attendees = [.. (attendees ?? Array.Empty<string>()).Select(name => new Attendee
             {
                 Name = name,
                 NormalizedName = NameNormalizer.Normalize(name),
@@ -50,7 +50,7 @@ public class MeetingStoreTests
     public async Task Finds_an_attendee_by_their_full_name()
     {
         using var db = await SeededAsync(
-            Meeting("m1", "a", 30, attendees: "Jonathan Nap"));
+            Meeting("m1", "a", 30, attendees: ["Jonathan Nap"]));
 
         var found = await db.Meetings.FindByAttendeeAsync(
             NameNormalizer.Normalize("Jonathan Nap"), Now, TimeSpan.FromHours(36),
@@ -73,7 +73,7 @@ public class MeetingStoreTests
     public async Task Never_matches_a_partial_name(string partial)
     {
         using var db = await SeededAsync(
-            Meeting("m1", "a", 30, attendees: "Jonathan Nap"));
+            Meeting("m1", "a", 30, attendees: ["Jonathan Nap"]));
 
         var found = await db.Meetings.FindByAttendeeAsync(
             partial, Now, TimeSpan.FromHours(36), CancellationToken.None);
@@ -85,7 +85,7 @@ public class MeetingStoreTests
     public async Task Does_not_hydrate_attendees_on_read()
     {
         using var db = await SeededAsync(
-            Meeting("m1", "a", 30, attendees: "Jonathan Nap", subject: "Intake"));
+            Meeting("m1", "a", 30, attendees: ["Jonathan Nap"], subject: "Intake"));
 
         var found = await db.Meetings.FindByAttendeeAsync(
             NameNormalizer.Normalize("Jonathan Nap"), Now, TimeSpan.FromHours(36),
@@ -107,12 +107,12 @@ public class MeetingStoreTests
     public async Task Replaces_the_window_atomically()
     {
         using var db = await SeededAsync(
-            Meeting("old", "a", 30, attendees: "Jonathan Nap"));
+            Meeting("old", "a", 30, attendees: ["Jonathan Nap"]));
 
         await db.Meetings.ReplaceWindowAsync(
             Now.AddHours(-2),
             Now.AddHours(36),
-            [Meeting("new", "a", 60, attendees: "Sanne de Vries")],
+            [Meeting("new", "a", 60, attendees: ["Sanne de Vries"])],
             CancellationToken.None);
 
         var gone = await db.Meetings.FindByAttendeeAsync(
@@ -170,7 +170,7 @@ public class MeetingStoreTests
         var upcoming = await db.Meetings.GetUpcomingAsync(
             Now, TimeSpan.FromHours(36), 100, CancellationToken.None);
 
-        Assert.Equal(["early", "middle", "late"], upcoming.Select(m => m.Id));
+        Assert.Equal(new[] { "early", "middle", "late" }, upcoming.Select(m => m.Id).ToArray());
     }
 
     /// <summary>
@@ -189,7 +189,7 @@ public class MeetingStoreTests
         var second = await db.Meetings.GetUpcomingAsync(
             Now, TimeSpan.FromHours(36), 100, CancellationToken.None);
 
-        Assert.Equal(["zaal-a", "zaal-z"], first.Select(m => m.RoomId));
+        Assert.Equal(new[] { "zaal-a", "zaal-z" }, first.Select(m => m.RoomId).ToArray());
         Assert.Equal(first.Select(m => m.Id), second.Select(m => m.Id));
     }
 
@@ -221,7 +221,7 @@ public class MeetingStoreTests
 
         // A meeting already in progress still counts: that is the one someone
         // walking in is looking for.
-        Assert.Equal(["live", "later"], upcoming.Select(m => m.Id));
+        Assert.Equal(new[] { "live", "later" }, upcoming.Select(m => m.Id).ToArray());
     }
 
     [Fact]
@@ -234,7 +234,7 @@ public class MeetingStoreTests
         var upcoming = await db.Meetings.GetUpcomingAsync(
             Now, TimeSpan.FromHours(4), 100, CancellationToken.None);
 
-        Assert.Equal(["soon"], upcoming.Select(m => m.Id));
+        Assert.Equal(new[] { "soon" }, upcoming.Select(m => m.Id).ToArray());
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public class MeetingStoreTests
         var window = await db.Meetings.GetWindowAsync(
             Now, Now.AddHours(8), CancellationToken.None);
 
-        Assert.Equal(["straddles"], window.Select(m => m.Id));
+        Assert.Equal(new[] { "straddles" }, window.Select(m => m.Id).ToArray());
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public class MeetingStoreTests
         var window = await db.Meetings.GetWindowAsync(
             Now, Now.AddHours(8), CancellationToken.None);
 
-        Assert.Equal(["a1", "a2", "b1", "b2"], window.Select(m => m.Id));
+        Assert.Equal(new[] { "a1", "a2", "b1", "b2" }, window.Select(m => m.Id).ToArray());
     }
 
     [Fact]
@@ -300,7 +300,7 @@ public class MeetingStoreTests
     public async Task Purge_drops_finished_meetings_and_their_attendees()
     {
         using var db = await SeededAsync(
-            Meeting("finished", "a", -180, lengthMinutes: 30, attendees: "Jonathan Nap"),
+            Meeting("finished", "a", -180, lengthMinutes: 30, attendees: ["Jonathan Nap"]),
             Meeting("live", "a", -10, lengthMinutes: 60));
 
         await db.Meetings.PurgeBeforeAsync(Now.AddHours(-1), CancellationToken.None);
@@ -327,6 +327,6 @@ public class MeetingStoreTests
         var found = await db.Meetings.GetByRoomAsync(
             "zaal-a", Now, TimeSpan.FromHours(36), CancellationToken.None);
 
-        Assert.Equal(["a1"], found.Select(m => m.Id));
+        Assert.Equal(new[] { "a1" }, found.Select(m => m.Id).ToArray());
     }
 }
