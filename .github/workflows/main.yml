@@ -1,0 +1,47 @@
+name: Build release
+
+on:
+  release:
+    types: published
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses:  actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build
+        run: |
+          chmod +x build/build.sh
+          ./build/build.sh linux-arm64
+
+      - name: Prepare package
+        run: |
+          mkdir release
+
+          cp -r deploy release/
+          cp -r config release/
+          cp -r artifacts/linux-arm64 release/linux-arm64
+
+          cd release
+          zip -r ../zuil-linux-arm64.zip .
+
+      - name: Upoad artifact to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zuil-linux-arm64.zip
