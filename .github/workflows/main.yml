@@ -39,6 +39,9 @@ jobs:
           cp -r scripts release/
           cp -r artifacts/linux-arm64 release/linux-arm64
 
+          # Ensure scripts inside release archive are marked executable
+          chmod +x release/scripts/*.sh release/linux-arm64/zuil
+
           cd release
           zip -r ../zuil-linux-arm64.zip .
 
