@@ -1,0 +1,36 @@
+name: CI Test & Build Verification
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  test-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore dependencies
+        run: dotnet restore robot-zuil.sln
+
+      - name: Run unit tests
+        run: dotnet test robot-zuil.sln --no-restore --verbosity normal
+
+      - name: Test build application (dry run)
+        run: |
+          chmod +x build/build.sh
+          ./build/build.sh linux-x64
