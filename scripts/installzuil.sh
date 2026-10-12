@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SRC="${1:?usage: install.sh <path-to-build-output>}"
+DEST="/opt/zuil"
+DEPLOY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Run as root." >&2
+  exit 1
+fi
+
+echo "==> Creating the zuil user"
+id -u zuil >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin zuil
+
+echo "==> Granting hardware access"
+usermod -aG i2c,gpio,video zuil
+
+echo "==> Enabling the i2c bus"
+if ! grep -q '^dtparam=i2c_arm=on' /boot/firmware/config.txt 2>/dev/null; then
+  echo 'dtparam=i2c_arm=on' >> /boot/firmware/config.txt
+  echo "    added dtparam=i2c_arm=on (reboot required)"
+fi
+
+# Generate a unique release ID using timestamp (or git commit / version)
+RELEASE_ID="$(date +%Y%m%d_%H%M%S)"
+RELEASE_DIR="$DEST/releases/$RELEASE_ID"
+
+echo "==> Staging new release to $RELEASE_DIR"
+mkdir -p "$RELEASE_DIR" /var/cache/zuil/extract "$DEST/config" "$DEST/data"
+cp -r "$SRC/." "$RELEASE_DIR/"
+chmod +x "$RELEASE_DIR/zuil"
+
+echo "==> Updating active symlink"
+ln -sfn "$RELEASE_DIR" "$DEST/current"
+echo "$RELEASE_ID" > "$DEST/version"
+
+# Handle production config template safely on fresh install or updates
+if [ ! -f "$DEST/config/appsettings.Production.json" ] && [ -f "$RELEASE_DIR/config/appsettings.Production.json.example" ]; then
+  cp "$RELEASE_DIR/config/appsettings.Production.json.example" "$DEST/config/appsettings.Production.json"
+  echo "    !! Created default appsettings.Production.json. Edit before starting."
+fi
+
+echo "==> Setting secure permissions"
+chown -R zuil:zuil "$DEST" /var/cache/zuil
+if [ -f "$DEST/config/appsettings.Production.json" ]; then
+  chmod 600 "$DEST/config/appsettings.Production.json"
+fi
+
+echo "==> Installing systemd units"
+# Assuming unit files are in the repository's deploy/ folder alongside our script
+if [ -d "$DEPLOY/../deploy" ]; then
+  cp "$DEPLOY/../deploy/zuil.service" "$DEPLOY/../deploy/zuil-kiosk.service" /etc/systemd/system/
+elif [ -f "$DEPLOY/zuil.service" ]; then
+  cp "$DEPLOY/zuil.service" "$DEPLOY/zuil-kiosk.service" /etc/systemd/system/
+fi
+
+systemctl daemon-reload
+systemctl enable zuil.service zuil-kiosk.service
+
+echo
+echo "Done! Installation/Update successful."
+echo "Start with:  systemctl start zuil zuil-kiosk"
+echo "Logs:        journalctl -u zuil -f"
