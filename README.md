@@ -48,6 +48,43 @@ No Entra tenant, no Pi and no ESP32 needed:
 Backend with fakes on `:5000`, Vite with HMR on `:5173`. Open
 <http://localhost:5173>.
 
+## How to Run & Install
+
+On your Raspberry Pi target device:
+
+### 1. Download and extract the latest release
+
+```bash
+mkdir -p /tmp/zuil-setup && cd /tmp/zuil-setup
+
+# Download latest release asset
+curl -sL https://github.com/Techcentrum-Hoornbeeckcollege/robot-zuil/releases/latest/download/zuil-linux-arm64.zip -o zuil-linux-arm64.zip
+
+# Unzip package
+unzip -o zuil-linux-arm64.zip
+```
+
+### 2. Run the installer / updater
+
+Run the unified idempotent installer/updater as root, pointing to the extracted `linux-arm64` directory:
+
+```bash
+sudo ./scripts/installzuil.sh ./linux-arm64
+```
+
+This installer automatically:
+- Creates the dedicated `zuil` system user and grants hardware group permissions (`i2c`, `gpio`, `video`).
+- Enables the I²C bus in `/boot/firmware/config.txt`.
+- Stages the build into an immutable release directory (`/opt/zuil/releases/<timestamp>/`) and atomically updates the active symlink (`/opt/zuil/current`).
+- Handles production configuration templates safely without overwriting existing credentials.
+- Registers and enables the systemd services (`zuil.service` and `zuil-kiosk.service`).
+
+To start or check the services manually:
+```bash
+sudo systemctl start zuil zuil-kiosk
+sudo journalctl -u zuil -f
+```
+
 ## Build the deliverable
 
 ```bash
