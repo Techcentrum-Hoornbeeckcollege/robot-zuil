@@ -15,7 +15,19 @@ echo "==> Creating the zuil user"
 id -u zuil >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin zuil
 
 echo "==> Granting hardware access"
-usermod -aG i2c,gpio,video zuil
+# Only add user to groups that actually exist on this system (prevents usermod failure)
+AVAILABLE_GROUPS=""
+for grp in i2c gpio video; do
+  if getent group "$grp" >/dev/null 2>&1; then
+    AVAILABLE_GROUPS="${AVAILABLE_GROUPS:+$AVAILABLE_GROUPS,}$grp"
+  fi
+done
+if [ -n "$AVAILABLE_GROUPS" ]; then
+  usermod -aG "$AVAILABLE_GROUPS" zuil
+  echo "    added zuil to groups: $AVAILABLE_GROUPS"
+else
+  echo "    no hardware groups (i2c, gpio, video) found on this system; skipping."
+fi
 
 echo "==> Enabling the i2c bus"
 if ! grep -q '^dtparam=i2c_arm=on' /boot/firmware/config.txt 2>/dev/null; then
@@ -31,6 +43,8 @@ echo "==> Staging new release to $RELEASE_DIR"
 mkdir -p "$RELEASE_DIR" /var/cache/zuil/extract "$DEST/config" "$DEST/data"
 cp -r "$SRC/." "$RELEASE_DIR/"
 chmod +x "$RELEASE_DIR/zuil"
+# Ensure all shell/executable scripts in release and scripts folder have execute permissions
+find "$RELEASE_DIR" -type f \( -name "*.sh" -o -name "*.py" -o -executable -o ! -name "*.*" \) -exec chmod +x {} +
 
 echo "==> Updating active symlink"
 ln -sfn "$RELEASE_DIR" "$DEST/current"
