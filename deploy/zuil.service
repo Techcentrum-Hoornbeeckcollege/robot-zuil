@@ -33,5 +33,9 @@ PrivateTmp=true
 NoNewPrivileges=true
 ReadWritePaths=/opt/zuil /var/cache/zuil
 
+# Reliable file logging for diagnostic fallback
+StandardOutput=append:/var/cache/zuil/backend.log
+StandardError=append:/var/cache/zuil/backend.log
+
 [Install]
 WantedBy=multi-user.target

@@ -36,5 +36,9 @@ ExecStart=/usr/bin/chromium-browser \
 Restart=always
 RestartSec=5
 
+# Reliable file logging for diagnostic fallback
+StandardOutput=append:/var/cache/zuil/kiosk.log
+StandardError=append:/var/cache/zuil/kiosk.log
+
 [Install]
 WantedBy=graphical.target
