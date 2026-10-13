@@ -72,11 +72,11 @@ years, and the failure mode is a lobby screen quietly serving a stale cache.
 A secret — wherever it is stored — is a bearer credential on an unattended
 machine in a public building, and now sits behind an admin password that someone
 has to have remembered to change. A certificate is better, and if a certificate
-path is configured in a file it **wins over** any stored secret, so a site that
-already does this loses nothing by upgrading.
+path is configured it **wins over** any stored secret, so a site that already
+does this loses nothing by upgrading.
 
-It is deliberately file-only and not editable from the GUI: a certificate is
-something whoever set the device up puts on it.
+The *path* is a setting like any other, but the file itself has to be put on the
+device by hand — that is the point of a certificate.
 
 Generate a self-signed cert on the device:
 
@@ -90,22 +90,15 @@ openssl pkcs12 -export -out zuil-graph.pfx \
 ```
 
 Upload `zuil-graph.crt` under Certificates & secrets → Certificates. Keep the
-`.pfx` on the device at `/opt/zuil/config/zuil-graph.pfx`, mode `600`, owned by
-`zuil`. The `.key`/`.pfx` are gitignored; never commit them.
+`.pfx` on the device at `/var/lib/zuil/zuil-graph.pfx`, mode `600`, owned by
+`zuil` — that directory is the one the kiosk already owns and the one that
+survives a release swap. The `.key`/`.pfx` are gitignored; never commit them.
 
-Then in `config/appsettings.Production.json`:
-
-```json
-{
-  "Graph": {
-    "CertificatePath": "/opt/zuil/config/zuil-graph.pfx",
-    "CertificatePassword": "…"
-  }
-}
-```
-
-The tenant and client id still come from the admin panel; only these two live in
-the file. Restart the service after editing it.
+Then fill in **Instellingen → Outlook**: the path in *Certificaatbestand* and
+the export password in *Certificaatwachtwoord*. Both are stored like the client
+secret — encrypted in the database with `secret.key` — and *Opslaan en testen*
+tells you straight away whether Entra accepted the certificate. There is no
+config file to edit and no restart.
 
 **Set a calendar reminder for the certificate expiry.** A two-year cert expires
 on a Tuesday eighteen months from now, and the failure mode is a lobby screen
