@@ -98,9 +98,11 @@ for f in "$DEST/config/appsettings.Production.json" "$DEST/config/.env"; do
 done
 
 echo "==> Installing systemd units"
-# Assuming unit files are in the repository's deploy/ folder alongside our script
+# Copy directly from the repository deploy/ folder or fallback to local dir
 if [ -d "$DEPLOY/../deploy" ]; then
   cp "$DEPLOY/../deploy/zuil.service" "$DEPLOY/../deploy/zuil-kiosk.service" /etc/systemd/system/
+elif [ -d "$DEPLOY/deploy" ]; then
+  cp "$DEPLOY/deploy/zuil.service" "$DEPLOY/deploy/zuil-kiosk.service" /etc/systemd/system/
 elif [ -f "$DEPLOY/zuil.service" ]; then
   cp "$DEPLOY/zuil.service" "$DEPLOY/zuil-kiosk.service" /etc/systemd/system/
 fi
