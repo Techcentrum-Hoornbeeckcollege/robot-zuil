@@ -32,3 +32,27 @@ jobs:
         run: |
           chmod +x build/build.sh
           ./build/build.sh linux-x64
+
+      - name: Lint shell scripts
+        run: |
+          for f in scripts/*.sh build/*.sh; do
+            bash -n "$f" || exit 1
+            echo "  OK: $f"
+          done
+
+      # Mirrors the packaging logic in .github/workflows/main.yml so that
+      # packaging problems are caught in CI, not only at release time.
+      - name: Verify release packaging
+        run: |
+          chmod +x scripts/*.sh artifacts/linux-x64/zuil
+          mkdir -p release
+          cp -r deploy config scripts release/
+          cp -r artifacts/linux-x64 release/linux-x64
+          chmod +x release/scripts/*.sh release/linux-x64/zuil
+          cd release
+          zip -r ../zuil-linux-x64.zip .
+          # Verify key files are present in the archive
+          unzip -l ../zuil-linux-x64.zip | grep -q 'scripts/installzuil.sh'
+          unzip -l ../zuil-linux-x64.zip | grep -q 'linux-x64/zuil'
+          unzip -l ../zuil-linux-x64.zip | grep -q 'deploy/zuil.service'
+          echo "Packaging verification passed"
