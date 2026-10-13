@@ -10,10 +10,8 @@ public sealed class StorageOptions
     /// </summary>
     public string DatabasePath { get; set; } = "zuil-cache.db";
 
-    /// <summary>
-    /// How long a cached meeting is kept after it ends. Short on purpose: this is
-    /// attendee data on a machine in a public building, so there is no reason to
-    /// retain yesterday's.
-    /// </summary>
-    public TimeSpan RetainPastMeetingsFor { get; set; } = TimeSpan.FromHours(2);
+    // Retention moved to Sync:RetainPastMeetingsFor in the database, where the
+    // admin panel can edit it. FirstRunSeeder still reads the old
+    // Storage:RetainPastMeetingsFor key once, to carry an existing install
+    // forward, which is why that key is not simply forgotten.
 }

@@ -1,12 +1,18 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Reflection;
+using System.Threading.RateLimiting;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Admin;
 using Zuil.Device;
 using Zuil.Graph;
 using Zuil.Host;
+using Zuil.Host.Admin;
 using Zuil.Host.Endpoints;
 using Zuil.Host.Hubs;
+using Zuil.Host.Settings;
 using Zuil.Host.Workers;
 using Zuil.Storage;
 
@@ -18,10 +24,20 @@ var noKiosk = args.Contains("--no-kiosk");
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuration lives in ./config next to the binary, not inside it: room
+// Configuration lives in a directory beside the binary, not inside it: room
 // directions change with the building, and credentials must never be compiled in.
-var baseDir = AppContext.BaseDirectory;
-var configDir = Path.Combine(baseDir, "config");
+//
+// ZUIL_CONFIG_DIR overrides where that is, because scripts/installzuil.sh
+// installs each build into /opt/zuil/releases/<timestamp>/ behind a `current`
+// symlink — so a config directory next to the binary is a *release* artefact
+// that gets thrown away on the next update, taking the operator's settings with
+// it. The persistent one lives at /opt/zuil/config.
+//
+// Read straight from the environment rather than through IConfiguration,
+// because this decides which files IConfiguration is then built from.
+var configDir = Environment.GetEnvironmentVariable("ZUIL_CONFIG_DIR") is { Length: > 0 } configured
+    ? Path.GetFullPath(configured)
+    : Path.Combine(AppContext.BaseDirectory, "config");
 
 builder.Configuration
     .AddJsonFile(Path.Combine(configDir, "appsettings.json"), optional: true, reloadOnChange: true)
@@ -31,31 +47,84 @@ builder.Configuration
         reloadOnChange: true)
     .AddEnvironmentVariables("ZUIL_");
 
-builder.Services.AddOptions<GraphOptions>()
-    .Bind(builder.Configuration.GetSection(GraphOptions.SectionName))
-    .ValidateOnStart();
+// Graph credentials, sync timing and device parameters now live in the database
+// and are edited from the admin panel, so they are no longer bound here. What
+// remains in configuration is what cannot change without a restart anyway.
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection(StorageOptions.SectionName));
-builder.Services.Configure<DeviceOptions>(
-    builder.Configuration.GetSection(DeviceOptions.SectionName));
-builder.Services.Configure<SyncOptions>(
-    builder.Configuration.GetSection(SyncOptions.SectionName));
 builder.Services.Configure<KioskOptions>(
     builder.Configuration.GetSection(KioskOptions.SectionName));
+
+// The admin password stays in configuration, not the database: a password a
+// visitor could change from the touchscreen is not a password.
+builder.Services.Configure<AdminOptions>(
+    builder.Configuration.GetSection(AdminOptions.SectionName));
+
+// The certificate escape hatch stays file-only and wins over a stored secret,
+// so a site already following docs/outlook-setup.md loses nothing by upgrading.
+builder.Services.Configure<GraphCredentialOptions>(
+    builder.Configuration.GetSection(GraphCredentialOptions.SectionName));
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// Room directory: read once at startup, and fail fast if it is missing or
-// inconsistent rather than serving a kiosk that points nowhere.
-builder.Services.AddSingleton<IRoomDirectory>(sp =>
+// One connection and one write lock, shared by both stores. A second connection
+// would reintroduce the SQLITE_BUSY contention this arrangement avoids.
+builder.Services.AddSingleton<ZuilDatabase>();
+
+// The key lives beside the database, not in the single-file extraction
+// directory, which is versioned per binary hash and wiped on the next deploy.
+builder.Services.AddSingleton(sp => new AesGcmSecretProtector(
+    sp.GetRequiredService<ZuilDatabase>().SecretKeyPath,
+    sp.GetRequiredService<ILogger<AesGcmSecretProtector>>()));
+
+// One instance behind two interfaces: ISettingsStore is what the admin panel
+// gets and cannot read the Graph secret, IGraphCredentialSource is the only
+// thing that can. See the comments on those interfaces.
+builder.Services.AddSingleton<SqliteSettingsStore>();
+builder.Services.AddSingleton<ISettingsStore>(
+    sp => sp.GetRequiredService<SqliteSettingsStore>());
+builder.Services.AddSingleton<IGraphCredentialSource>(
+    sp => sp.GetRequiredService<SqliteSettingsStore>());
+builder.Services.AddSingleton<ISettingsProvider, SettingsProvider>();
+
+// Admin sessions are in-process, so a restart signs everyone out. On a machine
+// in a lobby that is a feature.
+builder.Services.AddSingleton(sp => new AdminSessionStore(
+    sp.GetRequiredService<IClock>(),
+    sp.GetRequiredService<IOptions<AdminOptions>>().Value.SessionIdleTimeout));
+
+// Login is the one route worth rate limiting. Shared-framework feature, so no
+// package reference; the persistent lockout in the database is the part that
+// survives a power cycle.
+builder.Services.AddRateLimiter(options =>
 {
-    var logger = sp.GetRequiredService<ILogger<RoomDirectory>>();
-    var path = Path.Combine(configDir, "rooms.json");
-    return RoomDirectory.LoadFromFile(path, logger);
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(AdminEndpoints.LoginRateLimitPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(5),
+                QueueLimit = 0,
+            }));
 });
 
+// Room directory: a snapshot over the settings provider, rebuilt whenever an
+// administrator edits the rooms. config/rooms.json is only the first-run seed.
+builder.Services.AddSingleton<IRoomDirectory, SqliteBackedRoomDirectory>();
+
 builder.Services.AddSingleton<IMeetingStore, SqliteMeetingStore>();
+
+// The token provider is registered either way: the admin panel's "test
+// connection" needs it even on a kiosk started with --fake-calendar.
+builder.Services.AddSingleton<GraphTokenProvider>();
+
+// Registered even under --fake-calendar: "test connection" in the admin panel
+// exists precisely to exercise the real path.
+builder.Services.AddHttpClient<GraphConnectionTester>()
+    .SetHandlerLifetime(TimeSpan.FromMinutes(10));
 
 if (useFakeCalendar)
 {
@@ -63,7 +132,6 @@ if (useFakeCalendar)
 }
 else
 {
-    builder.Services.AddSingleton<GraphTokenProvider>();
     builder.Services.AddHttpClient<ICalendarSource, CalendarViewClient>()
         .SetHandlerLifetime(TimeSpan.FromMinutes(10));
 }
@@ -81,9 +149,33 @@ else
     builder.Services.AddSingleton<IDeviceBridge, Esp32I2cBridge>();
 }
 
-builder.Services.AddHostedService<CalendarSyncWorker>();
+// Registered as a singleton as well as a hosted service, so the admin panel's
+// "Nu synchroniseren" can wake the very instance the host is running.
+builder.Services.AddSingleton<CalendarSyncWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CalendarSyncWorker>());
 
 var app = builder.Build();
+
+// Say where we are reading and writing, every start. An operator editing a
+// config file the app was never going to look at is an unpleasant way to spend
+// an afternoon, and on a wall-mounted machine the journal is the only way to
+// tell the two directories apart.
+app.Services.GetRequiredService<ILogger<Program>>().LogInformation(
+    "Config directory {ConfigDir}, database {DatabasePath}",
+    configDir,
+    app.Services.GetRequiredService<ZuilDatabase>().DatabasePath);
+
+// Settings live in the database now. Carry an existing install's config files
+// across on the first boot, then load the snapshot everything else reads from.
+// Both before the sync worker's first pass, so it never runs against defaults.
+await FirstRunSeeder.SeedAsync(
+    app.Services.GetRequiredService<ISettingsStore>(),
+    builder.Configuration,
+    Path.Combine(configDir, "rooms.json"),
+    app.Services.GetRequiredService<ILogger<Program>>(),
+    CancellationToken.None);
+
+await app.Services.GetRequiredService<ISettingsProvider>().ReloadAsync(CancellationToken.None);
 
 // The frontend is served from embedded resources, which is what makes the
 // deployable a single file rather than a binary plus a wwwroot folder.
@@ -106,10 +198,14 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
+app.UseRateLimiter();
+
 app.MapSearchEndpoints();
 app.MapRoomEndpoints();
+app.MapAgendaEndpoints();
 app.MapDeviceEndpoints();
 app.MapHealthEndpoints();
+app.MapAdminEndpoints();
 app.MapHub<StatusHub>("/hub/status");
 
 // SPA fallback: any non-API route hands back index.html so client-side routing
@@ -165,7 +261,7 @@ app.Run();
 static void LaunchKiosk(WebApplication app)
 {
     var options = app.Services
-        .GetRequiredService<Microsoft.Extensions.Options.IOptions<KioskOptions>>().Value;
+        .GetRequiredService<IOptions<KioskOptions>>().Value;
 
     if (!options.LaunchBrowser)
     {

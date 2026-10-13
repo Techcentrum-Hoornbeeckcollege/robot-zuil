@@ -151,3 +151,518 @@ body {
   margin: 0;
   color: var(--error);
 }
+
+/* ------------------------------------------------------------------------
+   Shell: one page with a nav bar instead of a reload.
+   ------------------------------------------------------------------------ */
+
+.app-with-nav {
+  /* The nav sits at the bottom, within thumb reach on a standing column. */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  padding: 24px;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The agenda views need the full width of the column; .panel's 720px cap is
+   right for a form and wrong for a board of six rooms. */
+.app-with-nav .app-body > .agenda,
+.app-with-nav .app-body > .board,
+.app-with-nav .app-body > .admin {
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+}
+
+.nav {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+}
+
+.nav-button {
+  flex: 1;
+  min-height: var(--touch-min);
+  padding: 0 16px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid #28455f;
+  border-radius: var(--radius);
+}
+
+.nav-button-active {
+  color: #04120f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------------
+   Agenda: read from across the lobby, so large type and no hover affordances.
+   ------------------------------------------------------------------------ */
+
+.agenda,
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.agenda-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.agenda-header h1,
+.agenda-header h2 {
+  margin: 0;
+  font-size: 2.5rem;
+}
+
+.agenda-updated {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.25rem;
+}
+
+.agenda-list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.agenda-row {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid #28455f;
+}
+
+/* A meeting that is on right now is the one a visitor in the hall cares about. */
+.agenda-row-current {
+  border-left: 6px solid var(--accent);
+  padding-left: 16px;
+}
+
+.agenda-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.agenda-what {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agenda-room {
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.agenda-subject {
+  color: var(--muted);
+  font-size: 1.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Bezet" rather than a title. Not a styling choice: the server sent no
+   subject, and this is what stands in for it. */
+.agenda-subject-hidden {
+  font-style: italic;
+}
+
+.agenda-floor {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.agenda-empty {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------------
+   Board: six rooms will not fit legibly side by side on a portrait column,
+   so it scroll-snaps sideways showing two or three at a time. A swipe is the
+   one gesture a touchscreen is unambiguously good at.
+   ------------------------------------------------------------------------ */
+
+.board-columns {
+  display: grid;
+  flex: 1;
+  grid-auto-columns: minmax(320px, 1fr);
+  grid-auto-flow: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 24px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  scroll-snap-align: start;
+}
+
+.board-column-head h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.board-column-floor {
+  margin: 4px 0 0;
+  color: var(--accent);
+  font-size: 1.125rem;
+}
+
+.board-column-free {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 1.5rem;
+}
+
+.board-column .agenda-row {
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.board-column .agenda-time {
+  font-size: 1.125rem;
+}
+
+.board-column .agenda-subject {
+  font-size: 1.125rem;
+}
+
+/* ------------------------------------------------------------------------
+   The way in to settings: an invisible corner target, held for three seconds.
+   ------------------------------------------------------------------------ */
+
+.settings-gate {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  background: none;
+  border: none;
+  /* No visual affordance at all: a visitor who finds a settings button on a
+     lobby kiosk will press it. */
+  opacity: 0;
+}
+
+/* A faint acknowledgement once the press is registered, so a maintainer can
+   tell the difference between holding it and holding the wrong corner. */
+.settings-gate-holding {
+  background: var(--accent);
+  opacity: 0.15;
+}
+
+/* ------------------------------------------------------------------------
+   Admin. The global `cursor: none` and `user-select: none` make forms
+   unusable, so they are turned back on here and nowhere else.
+   ------------------------------------------------------------------------ */
+
+.admin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  cursor: auto;
+}
+
+.admin input,
+.admin textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-header h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-tab {
+  min-height: 56px;
+  padding: 0 20px;
+  font-size: 1.125rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid #28455f;
+  border-radius: var(--radius);
+}
+
+.admin-tab-active {
+  color: #04120f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: min(720px, 100%);
+  padding: 32px;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.admin-readonly {
+  margin: 0;
+  padding: 16px 0;
+  color: var(--muted);
+}
+
+.admin-number {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.input-number {
+  width: 8rem;
+  text-align: right;
+}
+
+.input-multiline {
+  padding: 16px 24px;
+  font-size: 1.5rem;
+  line-height: 1.4;
+  resize: none;
+}
+
+.admin-unit {
+  color: var(--muted);
+  font-size: 1.125rem;
+}
+
+.admin-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segment {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+  padding: 0 24px;
+  font-size: 1.25rem;
+  color: var(--text);
+  background: #0a1622;
+  border: 2px solid #28455f;
+  border-radius: var(--radius);
+}
+
+.segment-active {
+  color: #04120f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.segment:disabled {
+  opacity: 0.3;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.button-secondary {
+  color: var(--text);
+  background: #0a1622;
+  border: 2px solid #28455f;
+}
+
+.button-danger {
+  color: #1a0806;
+  background: var(--error);
+}
+
+.admin-saved {
+  color: var(--accent);
+  font-size: 1.125rem;
+}
+
+.admin-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin-secret-mask {
+  font-size: 1.75rem;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+}
+
+.admin-test-ok {
+  margin: 0;
+  color: var(--accent);
+}
+
+.admin-test-grid,
+.admin-signal-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge {
+  margin-left: 12px;
+  padding: 4px 12px;
+  font-size: 0.875rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.badge-warning {
+  color: #1a1204;
+  background: var(--warning);
+}
+
+.admin-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0 24px;
+  font-size: 1.25rem;
+  color: var(--text);
+  text-align: left;
+  background: #0a1622;
+  border: 2px solid #28455f;
+  border-radius: var(--radius);
+}
+
+.room-row-invalid {
+  border-color: var(--error);
+}
+
+.room-row-signal {
+  flex: 0 0 2.5rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.room-row-name {
+  flex: 1;
+}
+
+.room-row-floor {
+  color: var(--muted);
+  font-size: 1.125rem;
+}
+
+.admin-room-form {
+  width: min(720px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.admin-room-form h3 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.admin-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px 24px;
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.admin-facts dt {
+  color: var(--muted);
+}
+
+.admin-facts dd {
+  margin: 0;
+}
+
+.admin-error-detail {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 1rem;
+  background: #0a1622;
+  border-radius: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
