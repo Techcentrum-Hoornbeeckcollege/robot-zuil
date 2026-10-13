@@ -15,17 +15,21 @@ User=zuil
 # rather than running a network-facing service as root.
 SupplementaryGroups=i2c gpio
 WorkingDirectory=/opt/zuil
-ExecStart=/opt/zuil/zuil
+
+# The binary is NOT at /opt/zuil/zuil. scripts/installzuil.sh stages each build
+# into /opt/zuil/releases/<timestamp>/ and repoints the `current` symlink, so
+# that a bad update is one `ln -sfn` away from being rolled back.
+ExecStart=/opt/zuil/current/zuil
 Restart=always
 RestartSec=5
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=ASPNETCORE_ENVIRONMENT=Production
 
-# The admin password, in a 0600 file rather than an Environment= line here:
-# `systemctl cat` is world-readable. deploy/install.sh generates it. Optional so
-# the service still starts on a device set up before this existed, where the
-# password comes from appsettings.Production.json instead.
-EnvironmentFile=-/etc/zuil/zuil.env
+# Where the persistent paths and the admin password come from. In a 0600 file
+# rather than Environment= lines here, because `systemctl cat` is world-readable.
+# scripts/installzuil.sh writes it; runzuil.sh sources the same file for a manual
+# run. Optional, so a device installed before this existed still starts.
+EnvironmentFile=-/opt/zuil/config/.env
 
 # The single-file binary extracts its native libraries here on first run; give
 # it a writable, predictable location instead of /tmp.

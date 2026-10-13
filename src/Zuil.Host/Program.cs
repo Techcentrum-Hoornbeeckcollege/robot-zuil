@@ -24,10 +24,20 @@ var noKiosk = args.Contains("--no-kiosk");
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuration lives in ./config next to the binary, not inside it: room
+// Configuration lives in a directory beside the binary, not inside it: room
 // directions change with the building, and credentials must never be compiled in.
-var baseDir = AppContext.BaseDirectory;
-var configDir = Path.Combine(baseDir, "config");
+//
+// ZUIL_CONFIG_DIR overrides where that is, because scripts/installzuil.sh
+// installs each build into /opt/zuil/releases/<timestamp>/ behind a `current`
+// symlink — so a config directory next to the binary is a *release* artefact
+// that gets thrown away on the next update, taking the operator's settings with
+// it. The persistent one lives at /opt/zuil/config.
+//
+// Read straight from the environment rather than through IConfiguration,
+// because this decides which files IConfiguration is then built from.
+var configDir = Environment.GetEnvironmentVariable("ZUIL_CONFIG_DIR") is { Length: > 0 } configured
+    ? Path.GetFullPath(configured)
+    : Path.Combine(AppContext.BaseDirectory, "config");
 
 builder.Configuration
     .AddJsonFile(Path.Combine(configDir, "appsettings.json"), optional: true, reloadOnChange: true)
@@ -145,6 +155,15 @@ builder.Services.AddSingleton<CalendarSyncWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CalendarSyncWorker>());
 
 var app = builder.Build();
+
+// Say where we are reading and writing, every start. An operator editing a
+// config file the app was never going to look at is an unpleasant way to spend
+// an afternoon, and on a wall-mounted machine the journal is the only way to
+// tell the two directories apart.
+app.Services.GetRequiredService<ILogger<Program>>().LogInformation(
+    "Config directory {ConfigDir}, database {DatabasePath}",
+    configDir,
+    app.Services.GetRequiredService<ZuilDatabase>().DatabasePath);
 
 // Settings live in the database now. Carry an existing install's config files
 // across on the first boot, then load the snapshot everything else reads from.

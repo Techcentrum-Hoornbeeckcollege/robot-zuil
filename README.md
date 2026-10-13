@@ -35,7 +35,8 @@ in a single file.
 ```
 build/          build.sh (single binary) and dev.sh (laptop dev loop)
 config/         first-run room seed + the few file-only settings — ships BESIDE the binary
-deploy/         systemd units and install.sh for the Pi
+deploy/         systemd units for the Pi
+scripts/        installzuil.sh (install or update) and runzuil.sh (manual run)
 docs/           architecture, Outlook setup, wiring, deployment, privacy, admin runbook
 firmware/esp32/ PlatformIO i2c-slave firmware
 frontend/       React SPA: shell + features/{search,agenda,admin,settings}
@@ -119,8 +120,8 @@ Produces `artifacts/<rid>/zuil`. See [docs/deploy.md](docs/deploy.md).
 1. **Change the admin password.** It ships as `12345678`, the kiosk's own browser
    can reach `/api/admin`, and the touchscreen is the keyboard — so until it is
    changed, anyone who has read this repository can open the settings panel from
-   the lobby. `deploy/install.sh` generates a random one into
-   `/etc/zuil/zuil.env` and prints it once.
+   the lobby. `scripts/installzuil.sh` generates a random one into
+   `/opt/zuil/config/.env` and prints it once.
 2. **[docs/outlook-setup.md](docs/outlook-setup.md)** — register the Entra app,
    and *scope it to the six mailboxes with an `ApplicationAccessPolicy`*.
    Without that step, the credential on a device in a public lobby can read every
@@ -135,9 +136,9 @@ Produces `artifacts/<rid>/zuil`. See [docs/deploy.md](docs/deploy.md).
    the bus at 100 kHz.
 5. Make sure NTP works on the Pi. It has no RTC, and a wayfinding kiosk with a
    wrong clock confidently sends people to the wrong room.
-6. **Back up `zuil-cache.db` and `secret.key` together.** The database holds
-   every setting and the encrypted Outlook credential; the key file is what
-   decrypts it. Either one alone recovers nothing.
+6. **Back up `/opt/zuil/data/` — the database and `secret.key` together.** The
+   database holds every setting and the encrypted Outlook credential; the key
+   file is what decrypts it. Either one alone recovers nothing.
 
 ## Known open decision
 

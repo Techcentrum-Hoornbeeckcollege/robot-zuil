@@ -98,7 +98,7 @@ the database so pulling the plug does not reset the lockout, and comparison is
 constant-time. What none of that addresses is that the kiosk's own Chromium can
 reach `/api/admin` and the touchscreen is the keyboard. **Anyone who has read
 this repository can open the settings panel from the lobby until the password is
-changed.** `deploy/install.sh` generates a random one; the panel shows a warning
+changed.** `scripts/installzuil.sh` generates a random one; the panel shows a warning
 banner and the host logs one on every start until it is no longer the default.
 
 Corollary: **the Kestrel bind URL must never become editable from the GUI.**

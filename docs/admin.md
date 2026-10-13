@@ -28,11 +28,11 @@ Het wachtwoord staat niet in de zuil zelf maar op het apparaat, zodat niemand
 het vanaf het touchscreen kan wijzigen. Op de Raspberry Pi:
 
 ```bash
-sudo nano /etc/zuil/zuil.env      # ZUIL_Admin__Password=...
+sudo nano /opt/zuil/config/.env   # ZUIL_Admin__Password=...
 sudo systemctl restart zuil
 ```
 
-`deploy/install.sh` zet daar bij een nieuwe installatie een willekeurig
+`scripts/installzuil.sh` zet daar bij een nieuwe installatie een willekeurig
 wachtwoord in en laat het één keer zien. Bewaar het.
 
 ## De tabbladen
@@ -160,10 +160,11 @@ Diagnose en gebruik daarna *Verbinding testen* onder Outlook.
 en test ze onder Apparaat.
 
 **Het beheerscherm is onbereikbaar en het wachtwoord is kwijt.** Zet een nieuw
-wachtwoord in `/etc/zuil/zuil.env` en start de dienst opnieuw op.
+wachtwoord in `/opt/zuil/config/.env` en start de dienst opnieuw op.
 
-**Een instelling is onherstelbaar verprutst.** `config/rooms.json` en
-`config/appsettings.Production.json` op het apparaat zijn alleen nog
-startwaarden. De werkelijke instellingen staan in `zuil-cache.db`; die
-weggooien zet alles terug op de standaardwaarden — maar daarmee verdwijnt ook de
-opgeslagen Outlook-secret, die u dan opnieuw moet invullen.
+**Een instelling is onherstelbaar verprutst.** `rooms.json` en
+`appsettings.Production.json` in `/opt/zuil/config/` zijn alleen nog
+startwaarden. De werkelijke instellingen staan in
+`/opt/zuil/data/zuil-cache.db`; die weggooien zet alles terug op de
+standaardwaarden — maar daarmee verdwijnt ook de opgeslagen Outlook-secret, die
+u dan opnieuw moet invullen.

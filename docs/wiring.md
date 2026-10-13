@@ -49,6 +49,6 @@ retry into constant corruption. See
 
 ## Permissions
 
-The service runs as the `zuil` user, not root. `deploy/install.sh` adds that
+The service runs as the `zuil` user, not root. `scripts/installzuil.sh` adds that
 user to the `i2c` and `gpio` groups, which is what grants access to
 `/dev/i2c-1`. A network-facing service does not need to be root to toggle a pin.

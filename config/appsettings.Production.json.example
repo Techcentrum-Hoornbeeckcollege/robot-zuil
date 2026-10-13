@@ -2,7 +2,7 @@
   "// NOTE": "Copy to appsettings.Production.json on the Pi. That file is gitignored. Most settings are NOT here any more: tenant, client id, client secret, rooms, sync timing, device parameters and privacy are edited from the kiosk itself. Hold the bottom-right corner of the screen for three seconds. See docs/admin.md.",
 
   "Admin": {
-    "// Password": "CHANGE THIS. Prefer /etc/zuil/zuil.env, which deploy/install.sh generates with a random value, over putting it here: systemctl cat is world-readable but an EnvironmentFile at mode 600 is not. Until it is changed, anyone who has read this repository can open the settings panel from the lobby.",
+    "// Password": "CHANGE THIS. On the Pi it comes from /opt/zuil/config/.env, which scripts/installzuil.sh generates with a random value; prefer that over putting it here, since an EnvironmentFile at mode 600 is not world-readable the way systemctl cat is. Until it is changed, anyone who has read this repository can open the settings panel from the lobby.",
     "Password": "12345678"
   },
 
