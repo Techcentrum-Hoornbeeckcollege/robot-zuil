@@ -12,8 +12,8 @@ Wants=network-online.target
 Type=exec
 User=zuil
 # i2c access needs group membership, not root. Add the zuil user to i2c and gpio
-# rather than running a network-facing service as root.
-SupplementaryGroups=i2c gpio
+# rather than running a network-facing service as root. (Omitted SupplementaryGroups
+# to prevent systemd exit 216/GROUP if optional groups like i2c or gpio don't exist yet on the host).
 WorkingDirectory=/opt/zuil
 
 # The binary is NOT at /opt/zuil/zuil. scripts/installzuil.sh stages each build
