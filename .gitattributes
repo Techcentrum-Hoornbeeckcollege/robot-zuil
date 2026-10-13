@@ -1,0 +1,21 @@
+# Shell scripts and systemd units must keep LF on all platforms.
+# Without this, a Windows checkout with core.autocrlf=true produces CRLF
+# files that break the shebang line ("bash\r": No such file or directory).
+*.sh text eol=lf
+*.service text eol=lf
+*.sh eol=lf
+*.service eol=lf
+
+# Everything else: let .gitattributes handle it.
+* text=auto eol=lf
+
+# Binary and generated files stay as-is.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.pdf binary
