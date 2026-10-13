@@ -1,59 +1,147 @@
 import { useCallback, useState } from 'react';
-import { api } from './api/client';
-import type { SearchResponse } from './api/types';
+import { AdminLogin } from './features/admin/AdminLogin';
+import { AdminPanel } from './features/admin/AdminPanel';
+import { AgendaBoard } from './features/agenda/AgendaBoard';
+import { UpcomingAgenda } from './features/agenda/UpcomingAgenda';
+import { useAdminSession } from './features/admin/useAdminSession';
 import { AttractScreen } from './features/idle/AttractScreen';
 import { Directions } from './features/directions/Directions';
 import { NameSearch } from './features/search/NameSearch';
+import { SettingsGate } from './features/settings/SettingsGate';
 import { useIdleReset } from './hooks/useIdleReset';
+import { useKioskConfig } from './hooks/useKioskConfig';
 import { useStatusHub } from './hooks/useStatusHub';
+import { KioskShell } from './shell/KioskShell';
+import { useShell } from './shell/useShell';
+import { holdsVisitorData, restingKind } from './shell/viewState';
+import type { AdminTab } from './shell/viewState';
 
-type Screen = 'attract' | 'search' | 'result';
-
-/** Back to the attract screen after this long without touch. */
-const IDLE_TIMEOUT_MS = 45_000;
-
+/**
+ * One page for the whole kiosk: name search, two agenda views and the admin
+ * panel, with no reload between them.
+ *
+ * No router. Chromium runs with --app= and --overscroll-history-navigation=0, so
+ * there is no address bar, no back button and no gestures — a deep link is a
+ * link nobody can follow. An admin URL in history would also be a hint worth not
+ * leaving lying around.
+ */
 export function App() {
-  const [screen, setScreen] = useState<Screen>('attract');
-  const [response, setResponse] = useState<SearchResponse | null>(null);
+  const { config, reload: reloadConfig } = useKioskConfig();
+  const resting = restingKind(config.attractView);
 
-  const reset = useCallback(() => {
-    setResponse(null);
-    setScreen('attract');
-    // Also drop the physical indicator, so the column is not still pointing at
-    // the previous visitor's room.
-    void api.clearDevice();
-  }, []);
+  const { view, go, reset } = useShell(resting);
+  const { session, error, busy, login, logout } = useAdminSession();
 
-  useIdleReset(IDLE_TIMEOUT_MS, () => {
-    if (screen !== 'attract') {
+  // Bumped by the hub so the agenda views re-fetch without polling.
+  const [cacheNonce, setCacheNonce] = useState(0);
+
+  const onCacheUpdated = useCallback(() => setCacheNonce((n) => n + 1), []);
+
+  const onSettingsUpdated = useCallback(() => {
+    // A new idle timeout, resting screen or room list, without a reload. This
+    // is what makes "everything in one page" true rather than aspirational.
+    reloadConfig();
+    setCacheNonce((n) => n + 1);
+  }, [reloadConfig]);
+
+  useStatusHub({ onCacheUpdated, onSettingsUpdated });
+
+  useIdleReset(config.idleTimeoutMs, () => {
+    // Only screens holding something a visitor typed or was shown need wiping.
+    // The agenda views are a legitimate thing to leave up, and the admin panel
+    // runs its own shorter timer.
+    if (holdsVisitorData(view)) {
       reset();
     }
   });
 
-  // Nothing to refresh on screen today, but keeping the connection open means a
-  // future "room is now occupied" indicator needs no polling.
-  useStatusHub(useCallback(() => {}, []));
+  const openAdmin = useCallback(() => {
+    // Always the login panel, never the settings directly: a long press is a
+    // way in, not an authorisation.
+    go(session?.authenticated ? { kind: 'admin', tab: 'outlook' } : { kind: 'login' });
+  }, [go, session]);
+
+  const leaveAdmin = useCallback(() => {
+    void logout();
+    go({ kind: resting });
+  }, [go, logout, resting]);
+
+  const setTab = useCallback((tab: AdminTab) => go({ kind: 'admin', tab }), [go]);
 
   return (
-    <main className="app">
-      {screen === 'attract' && <AttractScreen onStart={() => setScreen('search')} />}
+    <KioskShell view={view} showAgendaNav={config.showAgendaNav} onNavigate={go}>
+      {renderView()}
 
-      {screen === 'search' && (
-        <NameSearch
-          onResult={(result) => {
-            setResponse(result);
-            setScreen('result');
-          }}
-        />
+      {/* Only on a resting screen, so it never sits on top of something
+          somebody is reading. */}
+      {(view.kind === 'attract' || view.kind === 'upcoming' || view.kind === 'board') && (
+        <SettingsGate onOpen={openAdmin} />
       )}
-
-      {screen === 'result' && response && (
-        <Directions
-          results={response.results}
-          stale={response.stale}
-          onReset={reset}
-        />
-      )}
-    </main>
+    </KioskShell>
   );
+
+  function renderView() {
+    switch (view.kind) {
+      case 'attract':
+        return <AttractScreen onStart={() => go({ kind: 'search' })} />;
+
+      case 'search':
+        return (
+          <NameSearch
+            onResult={(response) => go({ kind: 'result', response })}
+          />
+        );
+
+      case 'result':
+        return (
+          <Directions
+            results={view.response.results}
+            stale={view.response.stale}
+            onReset={reset}
+          />
+        );
+
+      case 'upcoming':
+        return (
+          <UpcomingAgenda
+            limit={config.upcomingCount}
+            refreshNonce={cacheNonce}
+            onSearch={() => go({ kind: 'search' })}
+          />
+        );
+
+      case 'board':
+        return <AgendaBoard refreshNonce={cacheNonce} />;
+
+      case 'login':
+        return (
+          <AdminLogin
+            error={error}
+            busy={busy}
+            onSubmit={async (password) => {
+              if (await login(password)) {
+                go({ kind: 'admin', tab: 'outlook' });
+              }
+            }}
+            onCancel={() => go({ kind: resting })}
+          />
+        );
+
+      case 'admin':
+        return (
+          <AdminPanel
+            tab={view.tab}
+            onTab={setTab}
+            onLeave={leaveAdmin}
+            onChanged={onSettingsUpdated}
+          />
+        );
+
+      default: {
+        // Adding a view to the union without rendering it fails the build here.
+        const exhaustive: never = view;
+        return exhaustive;
+      }
+    }
+  }
 }

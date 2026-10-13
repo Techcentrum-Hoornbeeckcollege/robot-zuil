@@ -38,6 +38,31 @@ public interface IMeetingStore
         TimeSpan lookahead,
         CancellationToken ct);
 
+    /// <summary>
+    /// Current and upcoming occurrences across every room, soonest first, capped
+    /// at <paramref name="limit"/>. Feeds the "Straks" list.
+    ///
+    /// Note there is no privacy parameter here. The store always returns the
+    /// whole <see cref="Meeting"/>, and exactly one pure function
+    /// (Zuil.Core.Agenda.AgendaProjection) decides what may be published.
+    /// Gating in the data layer would spread that decision across every call
+    /// site, each free to get it wrong.
+    /// </summary>
+    Task<IReadOnlyList<Meeting>> GetUpcomingAsync(
+        DateTimeOffset now,
+        TimeSpan lookahead,
+        int limit,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Occurrences overlapping [<paramref name="from"/>, <paramref name="to"/>)
+    /// in every room, grouped-friendly order, for the per-room board.
+    /// </summary>
+    Task<IReadOnlyList<Meeting>> GetWindowAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct);
+
     Task<SyncStatus> GetSyncStatusAsync(CancellationToken ct);
 
     Task RecordSyncAttemptAsync(DateTimeOffset at, string? error, CancellationToken ct);

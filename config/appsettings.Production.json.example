@@ -1,18 +1,16 @@
 {
-  "// NOTE": "Copy to appsettings.Production.json on the Pi and fill in. That file is gitignored: it holds a credential.",
+  "// NOTE": "Copy to appsettings.Production.json on the Pi. That file is gitignored. Most settings are NOT here any more: tenant, client id, client secret, rooms, sync timing, device parameters and privacy are edited from the kiosk itself. Hold the bottom-right corner of the screen for three seconds. See docs/admin.md.",
+
+  "Admin": {
+    "// Password": "CHANGE THIS. On the Pi it comes from /opt/zuil/config/.env, which scripts/installzuil.sh generates with a random value; prefer that over putting it here, since an EnvironmentFile at mode 600 is not world-readable the way systemctl cat is. Until it is changed, anyone who has read this repository can open the settings panel from the lobby.",
+    "Password": "12345678"
+  },
 
   "Graph": {
-    "TenantId": "00000000-0000-0000-0000-000000000000",
-    "ClientId": "00000000-0000-0000-0000-000000000000",
-
-    "// Auth": "Use a certificate, not a secret. A secret in a config file next to an unattended kiosk in a public building is a credential anyone with physical access can walk off with.",
-    "CertificatePath": "/opt/zuil/config/zuil-graph.pfx",
-    "CertificatePassword": "",
-
-    "// ClientSecret": "Development fallback only.",
-    "ClientSecret": null,
-
-    "TimeZone": "Europe/Amsterdam"
+    "// Credentials": "Tenant, client id and client secret are entered in the admin panel and stored encrypted. Leave them out of this file.",
+    "// CertificatePath": "Optional, and file-only on purpose. A certificate is stronger than a secret for an unattended machine in a public building, and it WINS over a stored secret — so a site already following docs/outlook-setup.md loses nothing. Delete these two lines to use a secret from the admin panel.",
+    "CertificatePath": null,
+    "CertificatePassword": null
   },
 
   "Kiosk": {

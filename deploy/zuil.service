@@ -15,18 +15,33 @@ User=zuil
 # rather than running a network-facing service as root. (Omitted SupplementaryGroups
 # to prevent systemd exit 216/GROUP if optional groups like i2c or gpio don't exist yet on the host).
 WorkingDirectory=/opt/zuil
+
+# The binary is NOT at /opt/zuil/zuil. scripts/installzuil.sh stages each build
+# into /opt/zuil/releases/<timestamp>/ and repoints the `current` symlink, so
+# that a bad update is one `ln -sfn` away from being rolled back.
 ExecStart=/opt/zuil/current/zuil
 Restart=always
 RestartSec=5
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=ASPNETCORE_ENVIRONMENT=Production
 
+# Where the persistent paths and the admin password come from. In a 0600 file
+# rather than Environment= lines here, because `systemctl cat` is world-readable.
+# scripts/installzuil.sh writes it; runzuil.sh sources the same file for a manual
+# run. Optional, so a device installed before this existed still starts.
+EnvironmentFile=-/opt/zuil/config/.env
+
 # The single-file binary extracts its native libraries here on first run; give
 # it a writable, predictable location instead of /tmp.
 Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/zuil/extract
 
-# Hardening. ReadWritePaths is what lets it write the SQLite cache while the
-# rest of the filesystem stays read-only.
+# Hardening. ReadWritePaths is what lets it write the SQLite cache, and
+# secret.key beside it, while the rest of the filesystem stays read-only.
+#
+# Note ProtectHome=true: it makes ~/.aspnet/DataProtection-Keys unwritable,
+# which is why the Graph secret is encrypted with an explicit key file and admin
+# sessions are in-process rather than Data Protection cookies. Both would have
+# silently fallen back to ephemeral keys here.
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

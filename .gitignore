@@ -6,6 +6,7 @@ artifacts/
 
 # Frontend
 node_modules/
+*.tsbuildinfo
 frontend/dist/
 
 # Generated: the frontend build is copied in here by build/build.sh
