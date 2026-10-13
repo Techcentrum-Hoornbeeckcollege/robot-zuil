@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
-using System.Security.Cryptography;
 using System.Text;
 using Zuil.Core.Abstractions;
 using Zuil.Core.Admin;
@@ -49,17 +47,20 @@ public static class AdminEndpoints
 
     private static void MapSessionEndpoints(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/admin/session", (
+        app.MapGet("/api/admin/session", async (
             HttpContext context,
             AdminSessionStore sessions,
-            IOptions<AdminOptions> options) =>
+            ISettingsStore store,
+            CancellationToken ct) =>
         {
             var token = AdminSession.TokenFrom(context.Request);
             var authenticated = token is not null && sessions.Validate(AdminSession.Hash(token));
+            var credential = await store.GetAdminCredentialAsync(ct);
 
             return Results.Ok(new AdminSessionResponse(
                 Authenticated: authenticated,
-                PasswordIsDefault: options.Value.IsDefault));
+                CredentialsAreDefault: credential?.IsDefault ?? true,
+                Username: credential?.Username ?? AdminCredential.DefaultUsername));
         });
 
         app.MapPost("/api/admin/session", async (
@@ -67,19 +68,19 @@ public static class AdminEndpoints
             HttpContext context,
             AdminSessionStore sessions,
             ISettingsStore store,
-            IOptions<AdminOptions> options,
+            ISettingsProvider settings,
             IClock clock,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var logger = loggerFactory.CreateLogger(AdminLogCategory);
-            var admin = options.Value;
+            var security = settings.Current.Security;
             var now = clock.Now;
 
             // The persistent ledger is what makes the lockout survive someone
             // pulling the plug, which an in-memory counter does not.
-            var failures = await store.CountFailedLoginsAsync(now - admin.LockoutWindow, ct);
-            if (failures >= admin.MaxFailedAttempts)
+            var failures = await store.CountFailedLoginsAsync(now - security.LockoutWindow, ct);
+            if (failures >= security.MaxFailedAttempts)
             {
                 logger.LogWarning(
                     "Admin login refused: locked out after {Failures} failures from {Ip}",
@@ -91,11 +92,22 @@ public static class AdminEndpoints
                     statusCode: StatusCodes.Status429TooManyRequests);
             }
 
-            if (!Matches(request.Password, admin.Password))
+            var credential = await store.GetAdminCredentialAsync(ct);
+
+            // Verify the password even when the username is wrong, so the two
+            // failures cost the same and the endpoint does not become a way to
+            // enumerate usernames.
+            var usernameMatches = credential is not null
+                && string.Equals(
+                    request.Username?.Trim(), credential.Username, StringComparison.OrdinalIgnoreCase);
+            var passwordMatches = credential is not null
+                && PasswordHasher.Verify(request.Password ?? "", credential.PasswordHash);
+
+            if (!usernameMatches || !passwordMatches)
             {
                 await store.RecordLoginAttemptAsync(now, succeeded: false, ct);
 
-                // Never the attempted password, in a log an administrator may
+                // Never the attempted credentials, in a log an administrator may
                 // well paste into a support ticket.
                 logger.LogWarning(
                     "Admin login failed from {Ip}", context.Connection.RemoteIpAddress);
@@ -103,8 +115,9 @@ public static class AdminEndpoints
                 // A fixed cost on failure, so the endpoint is not a fast oracle.
                 await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
 
+                // One message for both, so it says nothing about which was wrong.
                 return Results.Json(
-                    new AdminErrorResponse("Onjuist wachtwoord."),
+                    new AdminErrorResponse("Onjuiste gebruikersnaam of wachtwoord."),
                     statusCode: StatusCodes.Status401Unauthorized);
             }
 
@@ -120,7 +133,8 @@ public static class AdminEndpoints
 
             return Results.Ok(new AdminSessionResponse(
                 Authenticated: true,
-                PasswordIsDefault: admin.IsDefault));
+                CredentialsAreDefault: credential!.IsDefault,
+                Username: credential.Username));
         })
         .RequireRateLimiting(LoginRateLimitPolicy);
 
@@ -143,13 +157,12 @@ public static class AdminEndpoints
         admin.MapGet("/settings", async (
             ISettingsProvider settings,
             ISettingsStore store,
-            IOptions<AdminOptions> options,
             CancellationToken ct) =>
         {
-            var current = settings.Current;
             var secretIsSet = await store.HasGraphSecretAsync(ct);
+            var credential = await store.GetAdminCredentialAsync(ct);
 
-            return Results.Ok(ToResponse(current, secretIsSet, options.Value));
+            return Results.Ok(ToResponse(settings.Current, secretIsSet, credential));
         });
 
         admin.MapPut("/settings", async (
@@ -159,7 +172,6 @@ public static class AdminEndpoints
             GraphTokenProvider tokens,
             CalendarSyncWorker worker,
             IHubContext<StatusHub> hub,
-            IOptions<AdminOptions> options,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -208,6 +220,20 @@ public static class AdminEndpoints
                     break;
             }
 
+            switch (request.Graph?.CertificatePasswordAction ?? SecretAction.Keep)
+            {
+                case SecretAction.Set:
+                    await store.SetCertificatePasswordAsync(
+                        request.Graph!.CertificatePassword, ct);
+                    break;
+                case SecretAction.Clear:
+                    await store.SetCertificatePasswordAsync(null, ct);
+                    break;
+                case SecretAction.Keep:
+                default:
+                    break;
+            }
+
             // Drop the MSAL client before anything can ask for a token, so a
             // "test connection" straight after saving cannot pass on a token
             // minted with the previous secret.
@@ -226,7 +252,79 @@ public static class AdminEndpoints
             logger.LogInformation("Settings updated from the admin panel");
 
             var secretIsSet = await store.HasGraphSecretAsync(ct);
-            return Results.Ok(ToResponse(settings.Current, secretIsSet, options.Value));
+            var credential = await store.GetAdminCredentialAsync(ct);
+            return Results.Ok(ToResponse(settings.Current, secretIsSet, credential));
+        });
+
+        // Changing the credentials is its own endpoint rather than part of the
+        // settings PUT: it needs the current password, and a password hash has
+        // no business travelling in the same payload as the sync interval.
+        admin.MapPut("/credentials", async (
+            AdminCredentialRequest request,
+            ISettingsStore store,
+            AdminSessionStore sessions,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger(AdminLogCategory);
+            var current = await store.GetAdminCredentialAsync(ct);
+
+            if (current is null)
+            {
+                return Results.Problem("Er is nog geen beheeraccount.");
+            }
+
+            // Being logged in is not enough: an unattended open panel must not
+            // be a way to take the account over.
+            if (!PasswordHasher.Verify(request.CurrentPassword ?? "", current.PasswordHash))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+
+                return Results.BadRequest(new AdminValidationResponse(
+                    [new AdminFieldError("currentPassword", "Huidig wachtwoord klopt niet.")]));
+            }
+
+            var username = (request.Username ?? "").Trim();
+            var errors = new List<AdminFieldError>();
+
+            if (username.Length < 3)
+            {
+                errors.Add(new AdminFieldError(
+                    "username", "Gebruikersnaam moet minstens 3 tekens zijn."));
+            }
+
+            if ((request.NewPassword ?? "").Length < 8)
+            {
+                errors.Add(new AdminFieldError(
+                    "newPassword", "Wachtwoord moet minstens 8 tekens zijn."));
+            }
+            else if (string.Equals(
+                request.NewPassword, AdminCredential.DefaultPassword, StringComparison.Ordinal))
+            {
+                errors.Add(new AdminFieldError(
+                    "newPassword", "Kies iets anders dan het standaardwachtwoord."));
+            }
+
+            if (errors.Count > 0)
+            {
+                return Results.BadRequest(new AdminValidationResponse(errors));
+            }
+
+            await store.SetAdminCredentialAsync(
+                new AdminCredential(
+                    Username: username,
+                    PasswordHash: PasswordHasher.Hash(request.NewPassword!),
+                    IsDefault: false),
+                ct);
+
+            // Every other session was opened with the old password. Whoever
+            // changed it keeps working; anyone else is signed out.
+            sessions.Clear();
+
+            logger.LogInformation("Admin credentials changed; all sessions ended");
+
+            return Results.Ok(new AdminTestResponse(
+                true, "Opgeslagen. U moet opnieuw inloggen."));
         });
     }
 
@@ -309,12 +407,14 @@ public static class AdminEndpoints
             IDeviceBridge device,
             IClock clock,
             ISettingsProvider settings,
+            Zuil.Storage.ZuilDatabase database,
             AdminSessionStore sessions,
-            IOptions<AdminOptions> options,
+            ISettingsStore settingsStore,
             CancellationToken ct) =>
         {
             var status = await store.GetSyncStatusAsync(ct);
             var current = settings.Current;
+            var credential = await settingsStore.GetAdminCredentialAsync(ct);
 
             // The unsanitised last error lives here rather than on /api/health,
             // which answers an unauthenticated caller.
@@ -329,43 +429,39 @@ public static class AdminEndpoints
                 Stale: status.IsStale(clock.Now, current.Sync.StaleAfter),
                 RoomCount: current.Rooms.Count,
                 ActiveSessions: sessions.Count,
-                PasswordIsDefault: options.Value.IsDefault));
+                CredentialsAreDefault: credential?.IsDefault ?? true,
+                DataDirectory: System.IO.Path.GetDirectoryName(database.DatabasePath) ?? ""));
         });
 
         admin.MapGet("/settings/export", async (
             ISettingsProvider settings,
             ISettingsStore store,
-            IOptions<AdminOptions> options,
             CancellationToken ct) =>
         {
-            // A backup and a paste-back-into-rooms.json escape hatch. The secret
-            // is not in here, by construction: ToResponse cannot read it.
+            // A backup of everything the GUI can set. Neither the Graph secret
+            // nor the password hash is in here, by construction: ToResponse
+            // cannot read either.
             var secretIsSet = await store.HasGraphSecretAsync(ct);
-            return Results.Ok(ToResponse(settings.Current, secretIsSet, options.Value));
+            var credential = await store.GetAdminCredentialAsync(ct);
+            return Results.Ok(ToResponse(settings.Current, secretIsSet, credential));
         });
     }
 
-    /// <summary>
-    /// Constant-time comparison, so the endpoint does not leak the password one
-    /// character at a time through its response time.
-    /// </summary>
-    private static bool Matches(string? supplied, string expected) =>
-        supplied is not null
-        && CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(supplied),
-            Encoding.UTF8.GetBytes(expected));
-
     private static AdminSettingsResponse ToResponse(
-        KioskSettings settings, bool secretIsSet, AdminOptions admin) =>
+        KioskSettings settings, bool secretIsSet, AdminCredential? credential) =>
         new(
             Graph: new AdminGraphResponse(
                 TenantId: settings.Graph.TenantId,
                 ClientId: settings.Graph.ClientId,
                 BaseUrl: settings.Graph.BaseUrl,
                 TimeZone: settings.Graph.TimeZone,
+                CertificatePath: settings.Graph.CertificatePath,
+                CertificatePasswordIsSet: settings.Graph.CertificatePasswordIsSet,
                 // No value and no length: a length leaks something.
                 SecretIsSet: secretIsSet,
-                AuthMode: settings.Graph.SecretIsSet && !secretIsSet
+                // The certificate wins when one is configured, which is what
+                // GraphTokenProvider does.
+                AuthMode: !string.IsNullOrWhiteSpace(settings.Graph.CertificatePath)
                     ? "certificate"
                     : secretIsSet ? "secret" : "none"),
             Sync: new AdminSyncResponse(
@@ -388,8 +484,19 @@ public static class AdminEndpoints
                 AttractView: settings.Ui.AttractView.ToString(),
                 UpcomingCount: settings.Ui.UpcomingCount,
                 ShowAgendaNav: settings.Ui.ShowAgendaNav),
+            Security: new AdminSecurityResponse(
+                SessionIdleTimeoutMinutes: (int)settings.Security.SessionIdleTimeout.TotalMinutes,
+                MaxFailedAttempts: settings.Security.MaxFailedAttempts,
+                LockoutWindowMinutes: (int)settings.Security.LockoutWindow.TotalMinutes),
+            Network: new AdminNetworkResponse(
+                Host: NetworkSettings.Host,
+                Port: settings.Network.Port),
+            Browser: new AdminBrowserResponse(
+                LaunchBrowser: settings.Browser.LaunchBrowser,
+                BrowserPath: settings.Browser.BrowserPath),
             Rooms: [.. settings.Rooms.Select(ToAdminRoom)],
-            PasswordIsDefault: admin.IsDefault);
+            Username: credential?.Username ?? AdminCredential.DefaultUsername,
+            CredentialsAreDefault: credential?.IsDefault ?? true);
 
     private static AdminRoom ToAdminRoom(Room room) =>
         new(room.Id, room.Mailbox, room.DisplayName, room.Floor, room.Directions, room.SignalId);
@@ -407,6 +514,7 @@ public static class AdminEndpoints
                 ClientId = (g.ClientId ?? current.Graph.ClientId).Trim(),
                 BaseUrl = (g.BaseUrl ?? current.Graph.BaseUrl).Trim(),
                 TimeZone = (g.TimeZone ?? current.Graph.TimeZone).Trim(),
+                CertificatePath = (g.CertificatePath ?? current.Graph.CertificatePath).Trim(),
             }
             : current.Graph;
 
@@ -450,6 +558,29 @@ public static class AdminEndpoints
             }
             : current.Ui;
 
+        var security = request.Security is { } sec
+            ? current.Security with
+            {
+                SessionIdleTimeout = TimeSpan.FromMinutes(sec.SessionIdleTimeoutMinutes),
+                MaxFailedAttempts = sec.MaxFailedAttempts,
+                LockoutWindow = TimeSpan.FromMinutes(sec.LockoutWindowMinutes),
+            }
+            : current.Security;
+
+        // Only the port. The host is a constant, so no request can move the
+        // admin panel onto the building network.
+        var network = request.Network is { } net
+            ? current.Network with { Port = net.Port }
+            : current.Network;
+
+        var browser = request.Browser is { } br
+            ? current.Browser with
+            {
+                LaunchBrowser = br.LaunchBrowser,
+                BrowserPath = (br.BrowserPath ?? current.Browser.BrowserPath).Trim(),
+            }
+            : current.Browser;
+
         return current with
         {
             Graph = graph,
@@ -457,6 +588,9 @@ public static class AdminEndpoints
             Device = device,
             Privacy = privacy,
             Ui = ui,
+            Security = security,
+            Network = network,
+            Browser = browser,
         };
     }
 
@@ -500,9 +634,18 @@ public static class AdminEndpoints
 // Session
 // ---------------------------------------------------------------------------
 
-public sealed record AdminLoginRequest(string? Password);
+public sealed record AdminLoginRequest(string? Username, string? Password);
 
-public sealed record AdminSessionResponse(bool Authenticated, bool PasswordIsDefault);
+public sealed record AdminSessionResponse(
+    bool Authenticated,
+    bool CredentialsAreDefault,
+    string Username);
+
+/// <summary>Changing the admin account. Needs the current password.</summary>
+public sealed record AdminCredentialRequest(
+    string? Username,
+    string? CurrentPassword,
+    string? NewPassword);
 
 public sealed record AdminErrorResponse(string Error);
 
@@ -535,8 +678,11 @@ public sealed record AdminGraphRequest(
     string? ClientId,
     string? BaseUrl,
     string? TimeZone,
+    string? CertificatePath,
     SecretAction SecretAction,
-    string? Secret);
+    string? Secret,
+    SecretAction CertificatePasswordAction,
+    string? CertificatePassword);
 
 public sealed record AdminSyncRequest(
     int IntervalMinutes,
@@ -557,13 +703,26 @@ public sealed record AdminPrivacyRequest(string? SubjectVisibility, int IdleTime
 
 public sealed record AdminUiRequest(string? AttractView, int UpcomingCount, bool ShowAgendaNav);
 
+public sealed record AdminSecurityRequest(
+    int SessionIdleTimeoutMinutes,
+    int MaxFailedAttempts,
+    int LockoutWindowMinutes);
+
+/// <summary>Port only; the host is not settable.</summary>
+public sealed record AdminNetworkRequest(int Port);
+
+public sealed record AdminBrowserRequest(bool LaunchBrowser, string? BrowserPath);
+
 /// <summary>A partial update: any null section is left as it is.</summary>
 public sealed record AdminSettingsRequest(
     AdminGraphRequest? Graph,
     AdminSyncRequest? Sync,
     AdminDeviceRequest? Device,
     AdminPrivacyRequest? Privacy,
-    AdminUiRequest? Ui);
+    AdminUiRequest? Ui,
+    AdminSecurityRequest? Security,
+    AdminNetworkRequest? Network,
+    AdminBrowserRequest? Browser);
 
 /// <summary>
 /// Graph settings as read back. There is no Secret property, and there is no
@@ -575,6 +734,8 @@ public sealed record AdminGraphResponse(
     string ClientId,
     string BaseUrl,
     string TimeZone,
+    string CertificatePath,
+    bool CertificatePasswordIsSet,
     bool SecretIsSet,
     string AuthMode);
 
@@ -597,6 +758,16 @@ public sealed record AdminPrivacyResponse(string SubjectVisibility, int IdleTime
 
 public sealed record AdminUiResponse(string AttractView, int UpcomingCount, bool ShowAgendaNav);
 
+public sealed record AdminSecurityResponse(
+    int SessionIdleTimeoutMinutes,
+    int MaxFailedAttempts,
+    int LockoutWindowMinutes);
+
+/// <summary>Host is reported so the UI can show it as fixed, never as an input.</summary>
+public sealed record AdminNetworkResponse(string Host, int Port);
+
+public sealed record AdminBrowserResponse(bool LaunchBrowser, string BrowserPath);
+
 public sealed record AdminRoom(
     string Id,
     string Mailbox,
@@ -615,8 +786,12 @@ public sealed record AdminSettingsResponse(
     AdminDeviceResponse Device,
     AdminPrivacyResponse Privacy,
     AdminUiResponse Ui,
+    AdminSecurityResponse Security,
+    AdminNetworkResponse Network,
+    AdminBrowserResponse Browser,
     IReadOnlyList<AdminRoom> Rooms,
-    bool PasswordIsDefault);
+    string Username,
+    bool CredentialsAreDefault);
 
 public sealed record AdminDiagnosticsResponse(
     DateTimeOffset Now,
@@ -629,4 +804,5 @@ public sealed record AdminDiagnosticsResponse(
     bool Stale,
     int RoomCount,
     int ActiveSessions,
-    bool PasswordIsDefault);
+    bool CredentialsAreDefault,
+    string DataDirectory);

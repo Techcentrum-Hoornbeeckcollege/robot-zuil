@@ -1,3 +1,4 @@
+using Zuil.Core.Admin;
 using Zuil.Core.Models;
 using Zuil.Core.Settings;
 
@@ -47,6 +48,12 @@ public interface ISettingsStore
     Task<bool> HasGraphSecretAsync(CancellationToken ct);
 
     /// <summary>
+    /// Stores the certificate password encrypted, or clears it when passed
+    /// null. Write-only for the same reason as the client secret.
+    /// </summary>
+    Task SetCertificatePasswordAsync(string? password, CancellationToken ct);
+
+    /// <summary>
     /// True once the first-run seed has happened. Checked so that an
     /// administrator who deletes every room does not have them resurrected from
     /// config/rooms.json by the next restart.
@@ -55,6 +62,17 @@ public interface ISettingsStore
 
     /// <summary>Marks the first-run seed as done.</summary>
     Task MarkSeededAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The admin account, or null before the first run has seeded one.
+    /// </summary>
+    Task<AdminCredential?> GetAdminCredentialAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Replaces the admin account. Takes an already-hashed password: this
+    /// interface has no business seeing a plaintext one.
+    /// </summary>
+    Task SetAdminCredentialAsync(AdminCredential credential, CancellationToken ct);
 
     /// <summary>
     /// Records a login attempt, for a lockout that survives a power cycle — the

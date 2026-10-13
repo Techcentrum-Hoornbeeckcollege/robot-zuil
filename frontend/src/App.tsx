@@ -7,7 +7,6 @@ import { useAdminSession } from './features/admin/useAdminSession';
 import { AttractScreen } from './features/idle/AttractScreen';
 import { Directions } from './features/directions/Directions';
 import { NameSearch } from './features/search/NameSearch';
-import { SettingsGate } from './features/settings/SettingsGate';
 import { useIdleReset } from './hooks/useIdleReset';
 import { useKioskConfig } from './hooks/useKioskConfig';
 import { useStatusHub } from './hooks/useStatusHub';
@@ -55,12 +54,6 @@ export function App() {
     }
   });
 
-  const openAdmin = useCallback(() => {
-    // Always the login panel, never the settings directly: a long press is a
-    // way in, not an authorisation.
-    go(session?.authenticated ? { kind: 'admin', tab: 'outlook' } : { kind: 'login' });
-  }, [go, session]);
-
   const leaveAdmin = useCallback(() => {
     void logout();
     go({ kind: resting });
@@ -69,14 +62,18 @@ export function App() {
   const setTab = useCallback((tab: AdminTab) => go({ kind: 'admin', tab }), [go]);
 
   return (
-    <KioskShell view={view} showAgendaNav={config.showAgendaNav} onNavigate={go}>
+    <KioskShell
+      view={view}
+      showAgendaNav={config.showAgendaNav}
+      onNavigate={(next) =>
+        // The Settings tab leads to the login, unless this browser already has
+        // a live session — then straight in.
+        next.kind === 'login' && session?.authenticated
+          ? go({ kind: 'admin', tab: 'outlook' })
+          : go(next)
+      }
+    >
       {renderView()}
-
-      {/* Only on a resting screen, so it never sits on top of something
-          somebody is reading. */}
-      {(view.kind === 'attract' || view.kind === 'upcoming' || view.kind === 'board') && (
-        <SettingsGate onOpen={openAdmin} />
-      )}
     </KioskShell>
   );
 
@@ -118,8 +115,9 @@ export function App() {
           <AdminLogin
             error={error}
             busy={busy}
-            onSubmit={async (password) => {
-              if (await login(password)) {
+            credentialsAreDefault={session?.credentialsAreDefault ?? false}
+            onSubmit={async (username, password) => {
+              if (await login(username, password)) {
                 go({ kind: 'admin', tab: 'outlook' });
               }
             }}

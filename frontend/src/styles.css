@@ -666,3 +666,10 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* The Settings tab sits apart from the agenda tabs: staff, not visitors. */
+.nav-button-settings {
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: #0a1622;
+}

@@ -32,6 +32,9 @@ public static class SettingsValidator
         ValidateDevice(settings.Device, errors);
         ValidatePrivacy(settings.Privacy, errors);
         ValidateUi(settings.Ui, errors);
+        ValidateSecurity(settings.Security, errors);
+        ValidateNetwork(settings.Network, errors);
+        ValidateBrowser(settings.Browser, errors);
         errors.AddRange(ValidateRooms(settings.Rooms));
 
         return errors;
@@ -216,6 +219,41 @@ public static class SettingsValidator
         if (ui.UpcomingCount is < 1 or > 100)
         {
             errors.Add(new FieldError("ui.upcomingCount", "Kies tussen 1 en 100."));
+        }
+    }
+
+    private static void ValidateSecurity(SecuritySettings security, List<FieldError> errors)
+    {
+        Range(errors, "security.sessionIdleTimeout", security.SessionIdleTimeout,
+            TimeSpan.FromMinutes(1), TimeSpan.FromHours(8),
+            "Kies tussen 1 minuut en 8 uur.");
+
+        if (security.MaxFailedAttempts is < 1 or > 100)
+        {
+            errors.Add(new FieldError("security.maxFailedAttempts", "Kies tussen 1 en 100."));
+        }
+
+        Range(errors, "security.lockoutWindow", security.LockoutWindow,
+            TimeSpan.FromMinutes(1), TimeSpan.FromHours(24),
+            "Kies tussen 1 minuut en 24 uur.");
+    }
+
+    private static void ValidateNetwork(NetworkSettings network, List<FieldError> errors)
+    {
+        // Above 1024 because the service does not run as root, and below 65536
+        // because that is all there is.
+        if (network.Port is < 1024 or > 65535)
+        {
+            errors.Add(new FieldError("network.port", "Kies een poort tussen 1024 en 65535."));
+        }
+    }
+
+    private static void ValidateBrowser(BrowserSettings browser, List<FieldError> errors)
+    {
+        if (browser.LaunchBrowser && string.IsNullOrWhiteSpace(browser.BrowserPath))
+        {
+            errors.Add(new FieldError(
+                "browser.browserPath", "Vul het pad naar de browser in."));
         }
     }
 

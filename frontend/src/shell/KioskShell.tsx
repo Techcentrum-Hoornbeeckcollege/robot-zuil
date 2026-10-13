@@ -21,6 +21,16 @@ const ITEMS: readonly NavItem[] = [
 ];
 
 /**
+ * Settings sits apart from the agenda tabs: it is for staff, not visitors, and
+ * it leads to a login rather than to a screen.
+ */
+const SETTINGS: NavItem = {
+  label: 'Instellingen',
+  kind: 'login',
+  target: { kind: 'login' },
+};
+
+/**
  * The chrome around every screen: one page, with a nav bar instead of a reload.
  *
  * The bar is hidden on the attract screen, which is a single full-bleed button
@@ -34,8 +44,7 @@ export function KioskShell({ view, showAgendaNav, onNavigate, children }: Props)
     ? ITEMS
     : ITEMS.filter((item) => item.kind === 'search');
 
-  // One button is not a choice, so there is nothing worth showing.
-  const showNav = !chromeless && items.length > 1;
+  const showNav = !chromeless;
 
   return (
     <main className={chromeless ? 'app' : 'app app-with-nav'}>
@@ -53,6 +62,14 @@ export function KioskShell({ view, showAgendaNav, onNavigate, children }: Props)
               {item.label}
             </button>
           ))}
+
+          <button
+            type="button"
+            className="nav-button nav-button-settings"
+            onClick={() => onNavigate(SETTINGS.target)}
+          >
+            {SETTINGS.label}
+          </button>
         </nav>
       )}
     </main>

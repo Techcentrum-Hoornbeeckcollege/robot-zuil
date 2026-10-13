@@ -35,7 +35,6 @@ jobs:
           mkdir release
 
           cp -r deploy release/
-          cp -r config release/
           cp -r scripts release/
           cp -r artifacts/linux-arm64 release/linux-arm64
 

@@ -100,7 +100,9 @@ export interface KioskConfig {
 
 export interface AdminSession {
   authenticated: boolean;
-  passwordIsDefault: boolean;
+  /** True while the shipped admin/password pair is still in place. */
+  credentialsAreDefault: boolean;
+  username: string;
 }
 
 export interface AdminFieldError {
@@ -122,9 +124,29 @@ export interface AdminGraphSettings {
   clientId: string;
   baseUrl: string;
   timeZone: string;
+  /** Path to a .pfx on the device. Wins over the client secret when set. */
+  certificatePath: string;
+  certificatePasswordIsSet: boolean;
   /** Whether a secret is stored. The value itself is never returned. */
   secretIsSet: boolean;
   authMode: 'secret' | 'certificate' | 'none';
+}
+
+export interface AdminSecuritySettings {
+  sessionIdleTimeoutMinutes: number;
+  maxFailedAttempts: number;
+  lockoutWindowMinutes: number;
+}
+
+export interface AdminNetworkSettings {
+  /** Fixed at 127.0.0.1 and reported so the UI can show it as not editable. */
+  host: string;
+  port: number;
+}
+
+export interface AdminBrowserSettings {
+  launchBrowser: boolean;
+  browserPath: string;
 }
 
 export interface AdminSyncSettings {
@@ -170,16 +192,36 @@ export interface AdminSettings {
   device: AdminDeviceSettings;
   privacy: AdminPrivacySettings;
   ui: AdminUiSettings;
+  security: AdminSecuritySettings;
+  network: AdminNetworkSettings;
+  browser: AdminBrowserSettings;
   rooms: AdminRoom[];
-  passwordIsDefault: boolean;
+  username: string;
+  credentialsAreDefault: boolean;
 }
 
 /** What to do with the stored client secret on this save. */
 export type SecretAction = 'Keep' | 'Set' | 'Clear';
 
-export interface AdminGraphUpdate extends Omit<AdminGraphSettings, 'secretIsSet' | 'authMode'> {
+export interface AdminGraphUpdate
+  extends Omit<
+    AdminGraphSettings,
+    'secretIsSet' | 'authMode' | 'certificatePasswordIsSet'
+  > {
   secretAction: SecretAction;
   secret?: string;
+  certificatePasswordAction: SecretAction;
+  certificatePassword?: string;
+}
+
+/** Port only — the host is not settable. */
+export type AdminNetworkUpdate = Omit<AdminNetworkSettings, 'host'>;
+
+/** Changing the admin account. The current password is required. */
+export interface AdminCredentialUpdate {
+  username: string;
+  currentPassword: string;
+  newPassword: string;
 }
 
 /** A partial update: any section left out is kept as it is. */
@@ -189,6 +231,9 @@ export interface AdminSettingsUpdate {
   device?: AdminDeviceSettings;
   privacy?: AdminPrivacySettings;
   ui?: AdminUiSettings;
+  security?: AdminSecuritySettings;
+  network?: AdminNetworkUpdate;
+  browser?: AdminBrowserSettings;
 }
 
 export interface AdminDiagnostics {
@@ -202,5 +247,7 @@ export interface AdminDiagnostics {
   stale: boolean;
   roomCount: number;
   activeSessions: number;
-  passwordIsDefault: boolean;
+  credentialsAreDefault: boolean;
+  /** Where the database and its key file live. Not configurable; see DataDirectory. */
+  dataDirectory: string;
 }

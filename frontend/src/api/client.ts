@@ -1,4 +1,5 @@
 import type {
+  AdminCredentialUpdate,
   AdminDiagnostics,
   AdminRoom,
   AdminSession,
@@ -97,8 +98,17 @@ export const api = {
     return fetch('/api/admin/session', { signal }).then(json<AdminSession>);
   },
 
-  adminLogin(password: string, signal?: AbortSignal): Promise<AdminSession> {
-    return send('/api/admin/session', 'POST', { password }, signal).then(json<AdminSession>);
+  adminLogin(username: string, password: string, signal?: AbortSignal): Promise<AdminSession> {
+    return send('/api/admin/session', 'POST', { username, password }, signal)
+      .then(json<AdminSession>);
+  },
+
+  adminSaveCredentials(
+    update: AdminCredentialUpdate,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; message: string }> {
+    return send('/api/admin/credentials', 'PUT', update, signal)
+      .then(json<{ ok: boolean; message: string }>);
   },
 
   adminLogout(): Promise<void> {

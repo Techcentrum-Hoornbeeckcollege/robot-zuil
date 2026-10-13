@@ -19,10 +19,13 @@ public class AdminSessionStoreTests
 {
     private static readonly TimeSpan Idle = TimeSpan.FromMinutes(15);
 
+    /// <summary>The timeout is a live setting, so the store reads it per check.</summary>
+    private static Func<TimeSpan> Timeout(TimeSpan value) => () => value;
+
     [Fact]
     public void Accepts_a_token_it_issued()
     {
-        var store = new AdminSessionStore(new FakeClock(), Idle);
+        var store = new AdminSessionStore(new FakeClock(), Timeout(Idle));
         store.Create("hash");
 
         Assert.True(store.Validate("hash"));
@@ -31,7 +34,7 @@ public class AdminSessionStoreTests
     [Fact]
     public void Rejects_a_token_it_never_issued()
     {
-        var store = new AdminSessionStore(new FakeClock(), Idle);
+        var store = new AdminSessionStore(new FakeClock(), Timeout(Idle));
 
         Assert.False(store.Validate("made-up"));
     }
@@ -40,7 +43,7 @@ public class AdminSessionStoreTests
     public void Expires_a_session_left_idle()
     {
         var clock = new FakeClock();
-        var store = new AdminSessionStore(clock, Idle);
+        var store = new AdminSessionStore(clock, Timeout(Idle));
         store.Create("hash");
 
         clock.Advance(Idle + TimeSpan.FromSeconds(1));
@@ -56,7 +59,7 @@ public class AdminSessionStoreTests
     public void Keeps_an_active_session_alive_past_the_timeout()
     {
         var clock = new FakeClock();
-        var store = new AdminSessionStore(clock, Idle);
+        var store = new AdminSessionStore(clock, Timeout(Idle));
         store.Create("hash");
 
         for (var i = 0; i < 4; i++)
@@ -72,7 +75,7 @@ public class AdminSessionStoreTests
     [Fact]
     public void Logout_ends_the_session_immediately()
     {
-        var store = new AdminSessionStore(new FakeClock(), Idle);
+        var store = new AdminSessionStore(new FakeClock(), Timeout(Idle));
         store.Create("hash");
 
         store.Remove("hash");
@@ -83,7 +86,7 @@ public class AdminSessionStoreTests
     [Fact]
     public void Clear_ends_every_session()
     {
-        var store = new AdminSessionStore(new FakeClock(), Idle);
+        var store = new AdminSessionStore(new FakeClock(), Timeout(Idle));
         store.Create("one");
         store.Create("two");
 
@@ -102,7 +105,7 @@ public class AdminSessionStoreTests
     public void Sweeps_expired_sessions_on_access()
     {
         var clock = new FakeClock();
-        var store = new AdminSessionStore(clock, Idle);
+        var store = new AdminSessionStore(clock, Timeout(Idle));
 
         store.Create("stale-one");
         store.Create("stale-two");

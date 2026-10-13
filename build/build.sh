@@ -5,7 +5,7 @@
 #   ./build/build.sh                  # default: linux-arm64 (Raspberry Pi)
 #   ./build/build.sh linux-x64        # x86_64 Ubuntu desktop
 #
-# Output: artifacts/<rid>/zuil  plus the config/ directory it needs beside it.
+# Output: artifacts/<rid>/zuil  — one self-contained file, nothing beside it.
 
 set -euo pipefail
 
@@ -33,16 +33,9 @@ dotnet publish src/Zuil.Host/Zuil.Host.csproj \
   -p:TargetRid="$RID" \
   -o "$OUT"
 
-echo "==> Staging runtime configuration"
-# Config ships next to the binary, not inside it: room directions change with
-# the building and credentials must never be compiled in.
-mkdir -p "$OUT/config"
-cp "$ROOT/config/rooms.json" "$OUT/config/"
-cp "$ROOT/config/appsettings.Production.json.example" "$OUT/config/"
-
 echo
 echo "Done: $OUT/zuil"
 echo
-echo "To install on the device, use scripts/installzuil.sh. It seeds the config"
-echo "directory and generates an admin password; the tenant, client id and client"
-echo "secret are then entered from the kiosk itself. See docs/deploy.md."
+echo "That is the whole deliverable: one file, nothing beside it. It keeps its"
+echo "data in /var/lib/zuil and is set up entirely from its own screen."
+echo "To install on a device, use scripts/installzuil.sh. See docs/deploy.md."

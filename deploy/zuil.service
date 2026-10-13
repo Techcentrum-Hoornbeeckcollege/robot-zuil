@@ -25,18 +25,18 @@ RestartSec=5
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=ASPNETCORE_ENVIRONMENT=Production
 
-# Where the persistent paths and the admin password come from. In a 0600 file
-# rather than Environment= lines here, because `systemctl cat` is world-readable.
-# scripts/installzuil.sh writes it; runzuil.sh sources the same file for a manual
-# run. Optional, so a device installed before this existed still starts.
-EnvironmentFile=-/opt/zuil/config/.env
+# Creates and owns /var/lib/zuil, which is where the database and its key file
+# live. There is no configuration file and no environment file: everything an
+# operator sets is in that database, edited from the kiosk's own screen.
+StateDirectory=zuil
+StateDirectoryMode=0700
 
 # The single-file binary extracts its native libraries here on first run; give
 # it a writable, predictable location instead of /tmp.
 Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/zuil/extract
 
-# Hardening. ReadWritePaths is what lets it write the SQLite cache, and
-# secret.key beside it, while the rest of the filesystem stays read-only.
+# Hardening. StateDirectory above already grants /var/lib/zuil; ReadWritePaths
+# covers the single-file extraction directory.
 #
 # Note ProtectHome=true: it makes ~/.aspnet/DataProtection-Keys unwritable,
 # which is why the Graph secret is encrypted with an explicit key file and admin
@@ -46,7 +46,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
-ReadWritePaths=/opt/zuil /var/cache/zuil
+ReadWritePaths=/var/cache/zuil
 
 # Reliable file logging for diagnostic fallback
 StandardOutput=append:/var/cache/zuil/backend.log
