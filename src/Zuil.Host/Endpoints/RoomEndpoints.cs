@@ -1,6 +1,4 @@
-using Microsoft.Extensions.Options;
 using Zuil.Core.Abstractions;
-using Zuil.Host.Workers;
 
 namespace Zuil.Host.Endpoints;
 
@@ -25,7 +23,7 @@ public static class RoomEndpoints
             IRoomDirectory rooms,
             IClock clock,
             IDeviceBridge device,
-            IOptions<SyncOptions> sync,
+            ISettingsProvider settings,
             CancellationToken ct) =>
         {
             if (rooms.ById(id) is not { } room)
@@ -34,7 +32,7 @@ public static class RoomEndpoints
             }
 
             var meetings = await store.GetByRoomAsync(
-                room.Id, clock.Now, sync.Value.WindowAhead, ct);
+                room.Id, clock.Now, settings.Current.Sync.WindowAhead, ct);
 
             await device.ShowDirectionAsync(room.SignalId, ct);
 

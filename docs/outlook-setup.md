@@ -47,11 +47,38 @@ organisation's calendars — that is the single largest risk in this system.
 
 Policy changes can take up to ~30 minutes to take effect.
 
-## 4. Use a certificate, not a secret
+## 4. Give the kiosk a credential
 
-A client secret in a config file next to an unattended kiosk is a credential
-anyone with physical access can walk off with. Generate a self-signed cert on
-the device:
+There are two ways, and they are not equally good.
+
+### The admin panel (a client secret)
+
+What most installations will do, and what needs no SSH. Create a secret under
+**Certificates & secrets → Client secrets** in the app registration, then at the
+kiosk itself: hold the bottom-right corner of the screen for three seconds, log
+in, and fill in **Outlook** — tenant id, client id, client secret. *Opslaan en
+testen* acquires a token and reads one event from the first room's calendar, so
+you find out immediately rather than from an empty agenda.
+
+The secret is encrypted with AES-GCM against a key file beside the database, is
+never returned by the API, and cannot be read back from the panel. Be clear about
+what that buys and does not: see [privacy.md](privacy.md#the-graph-credential).
+
+**Set a calendar reminder for the secret's expiry.** Entra caps them at two
+years, and the failure mode is a lobby screen quietly serving a stale cache.
+
+### A certificate (stronger, and still supported)
+
+A secret — wherever it is stored — is a bearer credential on an unattended
+machine in a public building, and now sits behind an admin password that someone
+has to have remembered to change. A certificate is better, and if a certificate
+path is configured in a file it **wins over** any stored secret, so a site that
+already does this loses nothing by upgrading.
+
+It is deliberately file-only and not editable from the GUI: a certificate is
+something whoever set the device up puts on it.
+
+Generate a self-signed cert on the device:
 
 ```bash
 openssl req -x509 -newkey rsa:2048 -nodes -days 730 \
@@ -71,14 +98,14 @@ Then in `config/appsettings.Production.json`:
 ```json
 {
   "Graph": {
-    "TenantId": "…",
-    "ClientId": "…",
     "CertificatePath": "/opt/zuil/config/zuil-graph.pfx",
-    "CertificatePassword": "…",
-    "TimeZone": "Europe/Amsterdam"
+    "CertificatePassword": "…"
   }
 }
 ```
+
+The tenant and client id still come from the admin panel; only these two live in
+the file. Restart the service after editing it.
 
 **Set a calendar reminder for the certificate expiry.** A two-year cert expires
 on a Tuesday eighteen months from now, and the failure mode is a lobby screen
@@ -86,9 +113,13 @@ quietly serving a stale cache.
 
 ## 5. Configure the rooms
 
-Put the six mailbox addresses in `config/rooms.json`, with the display name,
-floor, walking directions and the `signalId` of the indicator that points at
-each one.
+Under **Instellingen → Zalen** on the kiosk: the mailbox address, display name,
+floor, walking directions, and which indicator points at each room. Changes take
+effect without a restart.
+
+`config/rooms.json` is only the first-run seed — it is read once, on the very
+first start, and editing it afterwards does nothing. It is still the easiest way
+to pre-load six rooms before the device ever boots.
 
 ## 6. Verify
 
