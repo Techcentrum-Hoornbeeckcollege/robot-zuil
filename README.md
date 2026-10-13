@@ -64,7 +64,16 @@ curl -sL https://github.com/Techcentrum-Hoornbeeckcollege/robot-zuil/releases/la
 unzip -o zuil-linux-arm64.zip
 ```
 
-### 2. Run the installer / updater
+### 2. Configure production settings
+
+Before starting the service, populate your Entra ID tenant and client credentials in the production config:
+
+```bash
+sudo nano /opt/zuil/config/appsettings.Production.json
+```
+*(Fill in your `TenantId`, `ClientId`, and certificate path/secret as detailed in [docs/outlook-setup.md](docs/outlook-setup.md)).*
+
+### 3. Run the installer / updater
 
 Run the unified idempotent installer/updater as root, pointing to the extracted `linux-arm64` directory:
 
