@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Options;
 using Zuil.Core.Abstractions;
 using Zuil.Core.Models;
 using Zuil.Core.Text;
-using Zuil.Host.Workers;
 
 namespace Zuil.Host.Endpoints;
 
@@ -21,7 +19,7 @@ public static class SearchEndpoints
             IRoomDirectory rooms,
             IClock clock,
             IDeviceBridge device,
-            IOptions<SyncOptions> sync,
+            ISettingsProvider settings,
             CancellationToken ct) =>
         {
             if (!clock.IsSynchronized)
@@ -41,8 +39,10 @@ public static class SearchEndpoints
                 return Results.BadRequest(new { error = "Enter your full name." });
             }
 
+            var sync = settings.Current.Sync;
+
             var meetings = await store.FindByAttendeeAsync(
-                normalized, clock.Now, sync.Value.WindowAhead, ct);
+                normalized, clock.Now, sync.WindowAhead, ct);
 
             if (meetings.Count == 0)
             {
@@ -80,7 +80,7 @@ public static class SearchEndpoints
             var status = await store.GetSyncStatusAsync(ct);
             return Results.Ok(new SearchResponse(
                 hints,
-                status.IsStale(clock.Now, sync.Value.StaleAfter)));
+                status.IsStale(clock.Now, sync.StaleAfter)));
         });
     }
 }

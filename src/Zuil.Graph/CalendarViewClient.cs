@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Zuil.Core.Abstractions;
@@ -22,18 +21,18 @@ public sealed class CalendarViewClient : ICalendarSource
 {
     private readonly HttpClient _http;
     private readonly GraphTokenProvider _tokens;
-    private readonly GraphOptions _options;
+    private readonly ISettingsProvider _settings;
     private readonly ILogger<CalendarViewClient> _logger;
 
     public CalendarViewClient(
         HttpClient http,
         GraphTokenProvider tokens,
-        IOptions<GraphOptions> options,
+        ISettingsProvider settings,
         ILogger<CalendarViewClient> logger)
     {
         _http = http;
         _tokens = tokens;
-        _options = options.Value;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -43,19 +42,23 @@ public sealed class CalendarViewClient : ICalendarSource
         DateTimeOffset to,
         CancellationToken ct)
     {
+        // One snapshot for the whole request, so a mid-flight settings change
+        // cannot page with one base URL and parse with another timezone.
+        var graph = _settings.Current.Graph;
+
         var token = await _tokens.GetAccessTokenAsync(ct);
 
         // $select keeps the payload — and the amount of personal data we pull
         // over the wire at all — to the minimum the kiosk renders.
         var url =
-            $"{_options.BaseUrl}/users/{Uri.EscapeDataString(room.Mailbox)}/calendarView" +
+            $"{graph.BaseUrl}/users/{Uri.EscapeDataString(room.Mailbox)}/calendarView" +
             $"?startDateTime={from:o}&endDateTime={to:o}" +
             "&$select=id,subject,start,end,isCancelled,attendees" +
             "&$orderby=start/dateTime" +
             "&$top=100";
 
         var results = new List<Meeting>();
-        var tz = ResolveTimeZone(_options.TimeZone);
+        var tz = ResolveTimeZone(graph.TimeZone);
 
         while (url is not null)
         {
@@ -64,7 +67,7 @@ public sealed class CalendarViewClient : ICalendarSource
 
             // Ask Graph to return times in our timezone instead of UTC.
             request.Headers.TryAddWithoutValidation(
-                "Prefer", $"outlook.timezone=\"{_options.TimeZone}\"");
+                "Prefer", $"outlook.timezone=\"{graph.TimeZone}\"");
 
             using var response = await _http.SendAsync(request, ct);
 
