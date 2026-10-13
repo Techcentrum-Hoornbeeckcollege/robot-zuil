@@ -42,6 +42,7 @@ cp "$ROOT/config/appsettings.Production.json.example" "$OUT/config/"
 
 echo
 echo "Done: $OUT/zuil"
-echo "Before first run, on the device:"
-echo "  cp config/appsettings.Production.json.example config/appsettings.Production.json"
-echo "  \$EDITOR config/appsettings.Production.json   # tenant, client id, certificate"
+echo
+echo "To install on the device, use scripts/installzuil.sh. It seeds the config"
+echo "directory and generates an admin password; the tenant, client id and client"
+echo "secret are then entered from the kiosk itself. See docs/deploy.md."
