@@ -254,3 +254,58 @@ export function SaveActions({ busy, dirty, saved, onSave, children }: ActionsPro
     </div>
   );
 }
+
+interface SliderFieldProps {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  hint?: ReactNode;
+  error?: string;
+}
+
+/**
+ * A bounded number as a slider with the value beside it.
+ *
+ * A slider rather than a number box because the device parameters it renders
+ * are physical quantities on a touchscreen — dragging a height is the gesture,
+ * typing 1200 with an on-screen keypad is not. The number stays visible so the
+ * exact value is never a guess.
+ */
+export function SliderField({
+  id,
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  unit,
+  hint,
+  error,
+}: SliderFieldProps) {
+  return (
+    <Field label={label} htmlFor={id} hint={hint} error={error}>
+      <span className="admin-slider">
+        <input
+          id={id}
+          className="input-range"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number.parseInt(e.target.value, 10))}
+        />
+        <output className="admin-slider-value" htmlFor={id}>
+          {value}
+          {unit.length > 0 && <span className="admin-unit"> {unit}</span>}
+        </output>
+      </span>
+    </Field>
+  );
+}

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using System.Text;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Devices;
 using Zuil.Core.Admin;
 using Zuil.Core.Models;
 using Zuil.Core.Settings;
@@ -373,6 +374,26 @@ public static class AdminEndpoints
         });
     }
 
+    private static AdminDeviceCapabilityResponse ToAdminCapability(DeviceCapability capability) =>
+        new(
+            capability.Key,
+            capability.Label,
+            $"0x{(byte)capability.Command:X2}",
+            capability.Hint,
+            capability.ExpectsReply,
+            [.. capability.Parameters.Select(parameter => new AdminDeviceParameterResponse(
+                parameter.Key,
+                parameter.Label,
+                parameter.Kind.ToString(),
+                parameter.Minimum,
+                parameter.Maximum,
+                parameter.Step,
+                parameter.Default,
+                parameter.Unit,
+                parameter.Hint,
+                [.. parameter.Choices.Select(choice =>
+                    new AdminDeviceChoiceResponse(choice.Value, choice.Label))]))]);
+
     private static void MapToolEndpoints(IEndpointRouteBuilder admin)
     {
         admin.MapPost("/graph/test", async (
@@ -394,6 +415,59 @@ public static class AdminEndpoints
             await device.ShowDirectionAsync(request.SignalId, ct);
             return Results.Ok(new AdminTestResponse(
                 true, $"Indicator {request.SignalId} aangestuurd."));
+        });
+
+        // The catalogue, so the admin screen can draw a control per parameter
+        // without being taught what the parameters mean. Admin-only: it is a
+        // description of the protocol, which is not something to hand to a
+        // visitor's browser.
+        admin.MapGet("/device/capabilities", () =>
+            Results.Ok(new AdminDeviceCapabilitiesResponse(
+                [.. DeviceCatalogue.All.Select(ToAdminCapability)])));
+
+        admin.MapPost("/device/command", async (
+            AdminDeviceCommandRequest request,
+            IDeviceBridge device,
+            CancellationToken ct) =>
+        {
+            // Still not a raw command byte: the key names a declared capability,
+            // and every value is checked against that declaration before a frame
+            // exists. An unknown key is a 404, not an opportunity.
+            if (DeviceCatalogue.Find(request.Command) is not { } capability)
+            {
+                return Results.NotFound(new AdminTestResponse(
+                    false, $"Onbekend commando: {request.Command}."));
+            }
+
+            var values = request.Values ?? new Dictionary<string, long>(StringComparer.Ordinal);
+
+            if (!capability.TryBuild(values, out var instruction, out var invalid))
+            {
+                return Results.BadRequest(new AdminValidationResponse(
+                    [.. invalid.Select(error => new AdminFieldError(error.Parameter, error.Message))]));
+            }
+
+            var reply = await device.SendAsync(instruction, ct);
+
+            // A null reply is the normal shape of "the bus did not answer", so it
+            // reports as a failed command rather than as a server error.
+            return Results.Ok(reply is null
+                ? new AdminDeviceReplyResponse(
+                    false,
+                    "Geen antwoord van de zuil. Controleer de bedrading en het i2c-adres.",
+                    null,
+                    null,
+                    null,
+                    null)
+                : new AdminDeviceReplyResponse(
+                    reply.IsSuccess,
+                    reply.IsSuccess
+                        ? $"{capability.Label}: {reply.Name} in {reply.RoundTrip.TotalMilliseconds:F0} ms."
+                        : $"{capability.Label}: de zuil antwoordde {reply.Name}.",
+                    reply.Name,
+                    Convert.ToHexString(reply.Payload.Span),
+                    (int)reply.RoundTrip.TotalMilliseconds,
+                    reply.Attempts));
         });
 
         admin.MapPost("/sync/now", (CalendarSyncWorker worker) =>
@@ -779,6 +853,52 @@ public sealed record AdminRoom(
 public sealed record AdminRoomsRequest(IReadOnlyList<AdminRoom> Rooms);
 
 public sealed record AdminDeviceTestRequest(byte SignalId);
+
+/// <summary>
+/// A device command as the admin screen describes it, flattened from
+/// <see cref="DeviceCapability"/> so the browser gets plain JSON.
+/// </summary>
+public sealed record AdminDeviceCapabilityResponse(
+    string Key,
+    string Label,
+    string Code,
+    string? Hint,
+    bool ExpectsReply,
+    IReadOnlyList<AdminDeviceParameterResponse> Parameters);
+
+public sealed record AdminDeviceParameterResponse(
+    string Key,
+    string Label,
+    string Kind,
+    long Minimum,
+    long Maximum,
+    long Step,
+    long Default,
+    string Unit,
+    string? Hint,
+    IReadOnlyList<AdminDeviceChoiceResponse> Choices);
+
+public sealed record AdminDeviceChoiceResponse(long Value, string Label);
+
+public sealed record AdminDeviceCapabilitiesResponse(
+    IReadOnlyList<AdminDeviceCapabilityResponse> Capabilities);
+
+/// <summary>
+/// Values keyed by parameter. Deliberately not a payload: the host builds the
+/// bytes from the declaration, so a browser cannot choose what goes on the bus.
+/// </summary>
+public sealed record AdminDeviceCommandRequest(
+    string? Command,
+    Dictionary<string, long>? Values);
+
+public sealed record AdminDeviceReplyResponse(
+    bool Ok,
+    string Message,
+    string? Response,
+    string? Payload,
+    int? RoundTripMs,
+    int? Attempts);
+
 
 public sealed record AdminSettingsResponse(
     AdminGraphResponse Graph,

@@ -123,6 +123,18 @@ opnieuw op.
 **Indicators testen** stuurt het lampje van één zaal aan, zodat u kunt zien of
 de juiste gaat branden. Handig na het verleggen van kabels.
 
+**Commando's versturen** laat alles zien wat de zuil naar de ESP32 kan sturen,
+met de waarden die elk commando meeneemt — en wat de ESP32 terugzegt (`PONG`,
+`ACK`, `NACK`), hoe lang dat duurde en na hoeveel pogingen. Dat laatste is waar
+een rammelende i2c-bus zichtbaar wordt: één poging is gezond, drie is een losse
+draad.
+
+Deze lijst komt van de zuil zelf en niet uit dit scherm. Krijgt de firmware een
+commando erbij — een hoogte, een kleur, een animatie — dan verschijnt de
+schuifregelaar hier automatisch, met het juiste bereik en de juiste eenheid. Voor
+de ontwikkelaar: dat is één regel in `DeviceCatalogue.cs`, zie
+[../schema/device-protocol.md](../schema/device-protocol.md#the-host-side-catalogue).
+
 ### Weergave
 
 **Beginscherm** is wat de zuil laat zien als er niemand bij staat: *Straks*

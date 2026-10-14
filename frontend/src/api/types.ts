@@ -251,3 +251,52 @@ export interface AdminDiagnostics {
   /** Where the database and its key file live. Not configurable; see DataDirectory. */
   dataDirectory: string;
 }
+
+/**
+ * A device command as the host declares it. The admin screen renders a control
+ * per parameter from this, so a command the firmware gains needs no change
+ * here — see src/Zuil.Core/Devices/DeviceCatalogue.cs.
+ */
+export interface AdminDeviceCapability {
+  key: string;
+  label: string;
+  /** The command byte, for the maintainer reading the protocol doc alongside. */
+  code: string;
+  hint: string | null;
+  expectsReply: boolean;
+  parameters: AdminDeviceParameter[];
+}
+
+export type AdminDeviceParameterKind = 'Number' | 'Toggle' | 'Choice';
+
+export interface AdminDeviceParameter {
+  key: string;
+  label: string;
+  kind: AdminDeviceParameterKind;
+  minimum: number;
+  maximum: number;
+  step: number;
+  default: number;
+  unit: string;
+  hint: string | null;
+  choices: AdminDeviceChoice[];
+}
+
+export interface AdminDeviceChoice {
+  value: number;
+  label: string;
+}
+
+export interface AdminDeviceCapabilities {
+  capabilities: AdminDeviceCapability[];
+}
+
+export interface AdminDeviceReply {
+  ok: boolean;
+  message: string;
+  /** PONG, ACK, NACK, … or null when nothing came back. */
+  response: string | null;
+  payload: string | null;
+  roundTripMs: number | null;
+  attempts: number | null;
+}
