@@ -31,7 +31,7 @@ var builder = WebApplication.CreateBuilder(args);
 //
 // This all happens before builder.Build(), because the port Kestrel binds is
 // itself one of the settings.
-// Logging defaults live here rather than in an appsettings.json, because a
+// Logging defaults live here rather than in a settings file, because a
 // single exe means exactly one file: nothing beside it to copy, lose, or forget
 // to update. systemd captures stdout, so the console provider is the whole
 // story on the Pi.

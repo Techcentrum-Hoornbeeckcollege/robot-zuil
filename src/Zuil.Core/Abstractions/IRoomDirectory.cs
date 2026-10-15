@@ -3,7 +3,7 @@ using Zuil.Core.Models;
 namespace Zuil.Core.Abstractions;
 
 /// <summary>
-/// The six rooms this kiosk serves, loaded from config/rooms.json at startup.
+/// The six rooms this kiosk serves, as last saved under Instellingen → Zalen.
 /// </summary>
 public interface IRoomDirectory
 {

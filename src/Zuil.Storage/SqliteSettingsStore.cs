@@ -20,7 +20,7 @@ namespace Zuil.Storage;
 public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
 {
     // Configuration-style colon notation, so a key reads the same here as it
-    // does in appsettings.json.
+    // used to do in a settings file.
     private const string KeyTenantId = "Graph:TenantId";
     private const string KeyClientId = "Graph:ClientId";
     private const string KeyBaseUrl = "Graph:BaseUrl";

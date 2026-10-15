@@ -110,9 +110,9 @@ Under **Instellingen → Zalen** on the kiosk: the mailbox address, display name
 floor, walking directions, and which indicator points at each room. Changes take
 effect without a restart.
 
-`config/rooms.json` is only the first-run seed — it is read once, on the very
-first start, and editing it afterwards does nothing. It is still the easiest way
-to pre-load six rooms before the device ever boots.
+The six rooms are seeded into the database on the very first start, from a list
+built into the binary. After that the database is the only source, so there is
+no file to edit — and nothing to copy onto the device beforehand.
 
 ## 6. Verify
 

@@ -85,41 +85,6 @@ echo "==> Updating active symlink"
 ln -sfn "$RELEASE_DIR" "$DEST/current"
 echo "$RELEASE_ID" > "$DEST/version"
 
-echo "==> Seeding the persistent config directory"
-# Seed only what is missing. An update must never overwrite these: the room list
-# and the production settings are the operator's, not the release's.
-if [ ! -f "$DEST/config/appsettings.Production.json" ] \
-   && [ -f "$RELEASE_DIR/config/appsettings.Production.json.example" ]; then
-  cp "$RELEASE_DIR/config/appsettings.Production.json.example" \
-     "$DEST/config/appsettings.Production.json"
-  echo "    created appsettings.Production.json"
-fi
-
-# rooms.json is read once, on the very first start, to populate the room table.
-# It has to be in the persistent directory, because that is the one the app
-# reads (ZUIL_CONFIG_DIR, below).
-if [ ! -f "$DEST/config/rooms.json" ] && [ -f "$RELEASE_DIR/config/rooms.json" ]; then
-  cp "$RELEASE_DIR/config/rooms.json" "$DEST/config/"
-  echo "    created rooms.json"
-fi
-
-# The environment the service and runzuil.sh both read. Written once and then
-# left alone, so an update never regenerates the admin password.
-#
-# ZUIL_CONFIG_DIR is the important one: without it the app reads
-# $RELEASE_DIR/config, which this script does not write and the next release
-# replaces — so every setting would silently revert on update.
-if [ ! -f "$DEST/config/.env" ]; then
-  GENERATED_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)" || true
-  cat > "$DEST/config/.env" <<EOF
-# Written by scripts/installzuil.sh on $(date -Is). Safe to edit; not overwritten.
-ZUIL_CONFIG_DIR=$DEST/config
-ZUIL_Storage__DatabasePath=$DEST/data/zuil-cache.db
-ZUIL_Admin__Password=$GENERATED_PASSWORD
-EOF
-  echo "    created .env with a generated admin password"
-fi
-
 echo "==> Setting secure permissions"
 chown -R zuil:zuil "$DEST" /var/cache/zuil
 

@@ -56,7 +56,7 @@ public interface ISettingsStore
     /// <summary>
     /// True once the first-run seed has happened. Checked so that an
     /// administrator who deletes every room does not have them resurrected from
-    /// config/rooms.json by the next restart.
+    /// the built-in defaults by the next restart.
     /// </summary>
     Task<bool> IsSeededAsync(CancellationToken ct);
 

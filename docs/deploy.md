@@ -9,7 +9,8 @@ On a machine with the .NET SDK and Node:
 ```
 
 Output: `artifacts/linux-arm64/zuil` — one self-contained binary with the React
-frontend embedded — plus the `config/` directory it reads at startup.
+frontend embedded, and nothing beside it. There is no configuration directory to
+ship: the kiosk is set up from its own screen.
 
 Cross-building for arm64 from an x86_64 machine works fine; .NET does not need a
 matching host architecture. (This is one of the reasons the Python sidecar idea
