@@ -176,8 +176,29 @@ await app.Services.GetRequiredService<ISettingsProvider>().ReloadAsync(Cancellat
 
 // The frontend is served from embedded resources, which is what makes the
 // deployable a single file rather than a binary plus a wwwroot folder.
-var embedded = new ManifestEmbeddedFileProvider(
-    Assembly.GetExecutingAssembly(), "wwwroot");
+//
+// A publish with an empty wwwroot leaves no manifest entry for the directory at
+// all, and ManifestEmbeddedFileProvider throws on construction rather than
+// coming back empty — which used to take the whole process down on boot, before
+// Kestrel bound a port, so the one thing that could have said what was wrong
+// never got the chance. Staying up is worth more: the fallback then answers
+// every request with the build command to run. See FallbackEndpoints.
+IFileProvider embedded;
+
+try
+{
+    embedded = new ManifestEmbeddedFileProvider(Assembly.GetExecutingAssembly(), "wwwroot");
+}
+catch (InvalidOperationException ex)
+{
+    app.Services.GetRequiredService<ILogger<Program>>().LogError(
+        ex,
+        "No frontend is embedded in this binary. The API will answer, but every "
+        + "page will explain how to build the UI instead of showing it. Run "
+        + "build/build.sh, or use the Vite dev server");
+
+    embedded = new NullFileProvider();
+}
 
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embedded });
 app.UseStaticFiles(new StaticFileOptions
@@ -206,23 +227,9 @@ app.MapAdminEndpoints();
 app.MapHub<StatusHub>("/hub/status");
 
 // SPA fallback: any non-API route hands back index.html so client-side routing
-// survives a refresh on the kiosk.
-app.MapFallback(async context =>
-{
-    var file = embedded.GetFileInfo("index.html");
-
-    if (!file.Exists)
-    {
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        await context.Response.WriteAsync(
-            "Frontend not built. Run build/build.sh, or use the Vite dev server.");
-        return;
-    }
-
-    context.Response.ContentType = "text/html";
-    context.Response.Headers.CacheControl = "no-cache, no-store";
-    await context.Response.SendFileAsync(file);
-});
+// survives a refresh on the kiosk. Everything the fallback has to tell a caller
+// instead of a page — an unknown endpoint, a missing frontend — is in there.
+app.MapFrontendFallback(embedded);
 
 // Ping the column once at startup so a wiring fault shows up in the logs now,
 // rather than the first time a visitor searches.
