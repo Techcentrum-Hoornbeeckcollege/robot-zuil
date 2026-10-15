@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
+import type { HealthLevel } from '../api/types';
+import { HealthDot } from './HealthDot';
 import type { View } from './viewState';
 
 interface Props {
   view: View;
   showAgendaNav: boolean;
+  health: HealthLevel | null;
   onNavigate: (view: View) => void;
   children: ReactNode;
 }
@@ -37,7 +40,7 @@ const SETTINGS: NavItem = {
  * and must not have anything else to tap, and in the admin panel, which has its
  * own tabs and its own way out.
  */
-export function KioskShell({ view, showAgendaNav, onNavigate, children }: Props) {
+export function KioskShell({ view, showAgendaNav, health, onNavigate, children }: Props) {
   const chromeless = view.kind === 'attract' || view.kind === 'login' || view.kind === 'admin';
 
   const items = showAgendaNav
@@ -70,6 +73,8 @@ export function KioskShell({ view, showAgendaNav, onNavigate, children }: Props)
           >
             {SETTINGS.label}
           </button>
+
+          <HealthDot level={health} />
         </nav>
       )}
     </main>

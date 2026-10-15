@@ -28,14 +28,23 @@ export interface RoomSummary {
   directions: string;
 }
 
+/**
+ * One rolled-up level, decided by the host (Zuil.Core HealthEvaluation) so the
+ * dot on the kiosk and the badge in the admin panel cannot disagree.
+ */
+export type HealthLevel = 'Ok' | 'Degraded' | 'Down';
+
 export interface Health {
   now: string;
   clockSynchronized: boolean;
   deviceConnected: boolean;
   lastSuccessfulSync: string | null;
-  lastError: string | null;
+  lastAttemptedSync: string | null;
+  /** Whether a sync failed, never the message: /api/health is unauthenticated. */
+  hasError: boolean;
   meetingCount: number;
   stale: boolean;
+  status: HealthLevel;
 }
 
 // --- Agenda ---------------------------------------------------------------
@@ -250,6 +259,7 @@ export interface AdminDiagnostics {
   credentialsAreDefault: boolean;
   /** Where the database and its key file live. Not configurable; see DataDirectory. */
   dataDirectory: string;
+  status: HealthLevel;
 }
 
 /**

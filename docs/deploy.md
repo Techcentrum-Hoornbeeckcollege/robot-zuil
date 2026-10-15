@@ -129,7 +129,7 @@ for someone to re-enter the secret. It does not crash.
 
 ```bash
 journalctl -u zuil -f                       # backend log
-curl -s localhost:5000/api/health | jq      # sync + device + clock state
+curl -s localhost:5000/api/health | jq      # status, sync, device, clock
 i2cdetect -y 1                              # is the ESP32 answering at 0x42
 timedatectl show -p NTPSynchronized --value  # must be "yes"
 ```
