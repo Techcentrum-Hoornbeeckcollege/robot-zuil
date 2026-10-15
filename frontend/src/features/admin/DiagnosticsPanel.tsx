@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import type { AdminDiagnostics } from '../../api/types';
+import type { AdminDiagnostics, HealthLevel } from '../../api/types';
+
+/** Short enough that a maintainer standing at the kiosk sees it recover. */
+const REFRESH_MS = 5000;
+
+const STATUS: Record<HealthLevel, { label: string; className: string }> = {
+  Ok: { label: 'In orde', className: 'health-badge health-badge-ok' },
+  Degraded: { label: 'Aandacht nodig', className: 'health-badge health-badge-degraded' },
+  Down: { label: 'Storing', className: 'health-badge health-badge-down' },
+};
 
 const STAMP = new Intl.DateTimeFormat('nl-NL', {
   day: 'numeric',
@@ -34,7 +43,12 @@ export function DiagnosticsPanel() {
       .catch(() => setFailed(true));
   }, []);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+
+    const timer = setInterval(load, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   if (failed) {
     return <p className="error">De diagnose kon niet worden geladen.</p>;
@@ -47,6 +61,13 @@ export function DiagnosticsPanel() {
   return (
     <section className="admin-section">
       <dl className="admin-facts">
+        <dt>Status</dt>
+        <dd>
+          <span className={STATUS[data.status].className}>
+            {STATUS[data.status].label}
+          </span>
+        </dd>
+
         <dt>Klok gesynchroniseerd</dt>
         <dd>{data.clockSynchronized ? 'ja' : 'nee — NTP werkt niet'}</dd>
 
@@ -92,9 +113,13 @@ export function DiagnosticsPanel() {
         </div>
       )}
 
+      <p className="admin-field-hint">
+        Dit scherm wordt elke vijf seconden bijgewerkt.
+      </p>
+
       <div className="admin-actions">
         <button className="button button-secondary" type="button" onClick={load}>
-          Verversen
+          Nu verversen
         </button>
       </div>
     </section>

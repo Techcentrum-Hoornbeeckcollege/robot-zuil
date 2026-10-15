@@ -14,12 +14,10 @@ public sealed record SyncStatus
 
     public int MeetingCount { get; init; }
 
-    /// <summary>
-    /// False until the OS clock has been confirmed against NTP. A Pi with no RTC
-    /// boots with a wrong clock, and "which meeting is on now" is meaningless
-    /// until the clock is trustworthy.
-    /// </summary>
-    public bool ClockSynchronized { get; init; }
+    // There is deliberately no ClockSynchronized here. Whether the OS clock has
+    // been confirmed against NTP is not something the last Graph call recorded,
+    // so it would always have read false; IClock.IsSynchronized is the live
+    // answer and HealthEvaluation takes it as its own argument.
 
     public bool IsStale(DateTimeOffset now, TimeSpan tolerance) =>
         LastSuccessfulSync is null || now - LastSuccessfulSync > tolerance;

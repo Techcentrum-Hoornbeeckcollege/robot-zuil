@@ -147,9 +147,14 @@ certificate in a TPM, is the real answer.
   password are now settings like everything else — the `.pfx` itself is still a
   file somebody puts on the device. A certificate remains the better credential
   for an unattended machine in a public building.
-- `GET /api/health` is unauthenticated, so the sync error it reports is a short
-  sanitised description. The raw message, which for Graph failures can quote a
-  response body, is behind `GET /api/admin/diagnostics`.
+- `GET /api/health` is unauthenticated, so it reports `hasError` — whether the
+  last sync failed — and no message at all. It used to return the message
+  itself, which for a Graph failure can quote a response body; this file
+  described the sanitised behaviour before the code actually did it. The raw
+  text is behind `GET /api/admin/diagnostics`.
+- The same endpoint's `status` is one of `Ok`, `Degraded` or `Down`, and the
+  coloured dot in the kiosk's own nav bar shows nothing more than that. A
+  stranger in the lobby learns that something needs attention, never what.
 
 ## Decisions still to make
 

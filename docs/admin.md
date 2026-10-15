@@ -164,15 +164,37 @@ Gebruikersnaam en wachtwoord voor beheer. Zie hierboven.
 ### Diagnose
 
 Alleen lezen. Dit is wat u nodig hebt als het scherm in de hal er verkeerd
-uitziet.
+uitziet. Het scherm werkt zichzelf elke vijf seconden bij, dus u kunt een kabel
+verleggen en hier zien of het helpt zonder iets aan te klikken.
 
+- **Status** is het korte antwoord: *In orde*, *Aandacht nodig* of *Storing*.
+  Dezelfde drie toestanden als het stipje rechtsonder in de balk op de zuil
+  zelf, want ze komen uit dezelfde beslissing in de software.
+  - *Storing* betekent dat de zuil de vraag waarvoor hij bestaat niet kan
+    beantwoorden: de klok staat niet goed, of er is nog nooit een geslaagde
+    synchronisatie geweest.
+  - *Aandacht nodig* betekent dat hij het nog wel doet, maar dat de gegevens te
+    oud zijn of dat de ESP32 niet antwoordt. Een bezoeker krijgt dan nog steeds
+    de juiste zaal te horen; alleen het lampje blijft uit.
 - **Klok gesynchroniseerd** moet *ja* zijn. De Pi heeft geen batterij-klok, en
   een zuil met een verkeerde tijd stuurt mensen met grote zekerheid naar de
   verkeerde zaal. Staat hier *nee*, dan werkt NTP niet en is dat het eerste om
   op te lossen.
 - **Laatst gelukt** hoort binnen een paar minuten te liggen.
-- **Laatste foutmelding** is de volledige melding, niet de ingekorte versie die
-  bezoekers zouden kunnen zien.
+- **Laatste foutmelding** is de volledige melding. Die staat alleen hier:
+  `/api/health`, dat zonder inloggen te benaderen is, meldt wél dát er een fout
+  is maar nooit wat er stond.
+
+### Het stipje op de zuil
+
+Rechtsonder in de balk staat één gekleurd stipje: groen, oranje of rood. Het
+zegt met opzet niet wát er mis is — dat scherm staat in een openbare hal, en
+"Outlook is niet ingesteld" is niets voor een voorbijganger. Het is bedoeld voor
+een medewerker die langsloopt: oranje of rood betekent *ga onder Instellingen
+naar Diagnose kijken*.
+
+Op het beginscherm staat de balk niet, dus een bezoeker die naar de wachtende
+zuil kijkt ziet ook het stipje niet.
 
 ## Als er iets niet werkt
 
