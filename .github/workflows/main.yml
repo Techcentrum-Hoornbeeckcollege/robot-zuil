@@ -30,6 +30,11 @@ jobs:
           chmod +x build/build.sh
           ./build/build.sh linux-arm64
 
+      - name: Verify the frontend is embedded in the binary
+        run: |
+          chmod +x build/verify-frontend-embedded.sh
+          ./build/verify-frontend-embedded.sh artifacts/linux-arm64/zuil
+
       - name: Prepare package
         run: |
           mkdir release
