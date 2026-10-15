@@ -36,11 +36,31 @@ ssh zuil-pi 'cd /tmp && unzip -o zuil-linux-arm64.zip -d zuil-release \
 
 That installs system dependencies (ICU for .NET globalization, curl for health
 checks), creates the `zuil` user, grants i2c/gpio access, enables the bus,
-installs both systemd units, and **generates a random admin password, printing it once**.
+installs the application and update systemd units, and **generates a random
+admin password, printing it once**.
 Write it down.
 
 ```bash
 sudo systemctl start zuil zuil-kiosk
+```
+
+## Automatic updates
+
+`zuil-update.timer` runs every day at 17:00 local time. It downloads the latest
+GitHub release, verifies the `SHA256SUMS` asset, and never changes
+`/var/lib/zuil`.
+
+The updater reuses the installer’s release directories and symlink. It only
+switches the active release after the archive is verified. After restarting
+the backend it waits for `/api/health`; if the health check does not succeed,
+the previous release is restored and both services are restarted.
+
+To trigger or inspect it manually:
+
+```bash
+sudo systemctl start zuil-update.service
+sudo journalctl -u zuil-update.service
+systemctl list-timers zuil-update.timer
 ```
 
 ### What goes where

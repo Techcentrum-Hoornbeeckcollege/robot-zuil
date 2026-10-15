@@ -43,8 +43,12 @@ jobs:
 
           cd release
           zip -r ../zuil-linux-arm64.zip .
+          cd ..
+          sha256sum zuil-linux-arm64.zip > SHA256SUMS
 
       - name: Upload artifact to release
         uses: softprops/action-gh-release@v2
         with:
-          files: zuil-linux-arm64.zip
+          files: |
+            zuil-linux-arm64.zip
+            SHA256SUMS

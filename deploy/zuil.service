@@ -46,7 +46,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
-ReadWritePaths=/var/cache/zuil
+ReadWritePaths=/var/cache/zuil /run/zuil-update
 
 # Reliable file logging for diagnostic fallback
 StandardOutput=append:/var/cache/zuil/backend.log

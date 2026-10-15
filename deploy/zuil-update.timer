@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Robot Zuil updater daily
+
+[Timer]
+OnCalendar=*-*-* 17:00:00
+Persistent=true
+Unit=zuil-update.service
+
+[Install]
+WantedBy=timers.target

@@ -155,6 +155,10 @@ export const api = {
     return send('/api/admin/sync/now', 'POST', {}).then(empty);
   },
 
+  adminRequestUpdate(): Promise<void> {
+    return send('/api/admin/update', 'POST', {}).then(empty);
+  },
+
   adminDiagnostics(signal?: AbortSignal): Promise<AdminDiagnostics> {
     return fetch('/api/admin/diagnostics', { signal }).then(json<AdminDiagnostics>);
   },
