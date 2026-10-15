@@ -1,4 +1,7 @@
 import type {
+  AdminCredentialUpdate,
+  AdminDeviceCapabilities,
+  AdminDeviceReply,
   AdminDiagnostics,
   AdminRoom,
   AdminSession,
@@ -97,8 +100,17 @@ export const api = {
     return fetch('/api/admin/session', { signal }).then(json<AdminSession>);
   },
 
-  adminLogin(password: string, signal?: AbortSignal): Promise<AdminSession> {
-    return send('/api/admin/session', 'POST', { password }, signal).then(json<AdminSession>);
+  adminLogin(username: string, password: string, signal?: AbortSignal): Promise<AdminSession> {
+    return send('/api/admin/session', 'POST', { username, password }, signal)
+      .then(json<AdminSession>);
+  },
+
+  adminSaveCredentials(
+    update: AdminCredentialUpdate,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; message: string }> {
+    return send('/api/admin/credentials', 'PUT', update, signal)
+      .then(json<{ ok: boolean; message: string }>);
   },
 
   adminLogout(): Promise<void> {
@@ -123,6 +135,20 @@ export const api = {
 
   adminTestDevice(signalId: number, signal?: AbortSignal): Promise<AdminTestResult> {
     return send('/api/admin/device/test', 'POST', { signalId }, signal).then(json<AdminTestResult>);
+  },
+
+  /** The commands the host knows how to send; the GUI draws itself from these. */
+  adminDeviceCapabilities(signal?: AbortSignal): Promise<AdminDeviceCapabilities> {
+    return fetch('/api/admin/device/capabilities', { signal }).then(json<AdminDeviceCapabilities>);
+  },
+
+  adminSendDeviceCommand(
+    command: string,
+    values: Record<string, number>,
+    signal?: AbortSignal,
+  ): Promise<AdminDeviceReply> {
+    return send('/api/admin/device/command', 'POST', { command, values }, signal)
+      .then(json<AdminDeviceReply>);
   },
 
   adminSyncNow(): Promise<void> {

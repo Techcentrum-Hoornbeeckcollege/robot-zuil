@@ -1,3 +1,5 @@
+using Zuil.Core.Devices;
+
 namespace Zuil.Device;
 
 /// <summary>
@@ -11,10 +13,14 @@ namespace Zuil.Device;
 /// </summary>
 public static class Framing
 {
-    public const int MaxPayload = 16;
+    /// <summary>Taken from Core so the catalogue and the wire agree by construction.</summary>
+    public const int MaxPayload = DeviceProtocol.MaxPayload;
     public const int MaxFrame = 2 + MaxPayload + 1;
 
-    public static byte[] Encode(DeviceCommand command, ReadOnlySpan<byte> payload)
+    public static byte[] Encode(DeviceCommand command, ReadOnlySpan<byte> payload) =>
+        Encode((byte)command, payload);
+
+    public static byte[] Encode(byte command, ReadOnlySpan<byte> payload)
     {
         if (payload.Length > MaxPayload)
         {
@@ -24,7 +30,7 @@ public static class Framing
 
         var frame = new byte[2 + payload.Length + 1];
         frame[0] = (byte)(payload.Length + 2); // cmd + payload + crc
-        frame[1] = (byte)command;
+        frame[1] = command;
         payload.CopyTo(frame.AsSpan(2));
         frame[^1] = Crc8.Compute(frame.AsSpan(0, frame.Length - 1));
 
@@ -65,23 +71,4 @@ public static class Framing
         payload = frame[2..^1].ToArray();
         return true;
     }
-}
-
-/// <summary>Command byte values. Keep in sync with protocol.h.</summary>
-public enum DeviceCommand : byte
-{
-    Ping = 0x01,
-    ShowDirection = 0x02,
-    Clear = 0x03,
-    ReadEvent = 0x04,
-}
-
-/// <summary>Response/event codes the firmware may send back.</summary>
-public enum DeviceResponse : byte
-{
-    Pong = 0x81,
-    Ack = 0x82,
-    Nack = 0x83,
-    NoEvent = 0x84,
-    Fault = 0x85,
 }

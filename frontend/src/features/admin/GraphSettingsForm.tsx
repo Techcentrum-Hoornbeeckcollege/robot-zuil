@@ -31,6 +31,8 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
   const [timeZone, setTimeZone] = useState(settings.timeZone);
   const [replacing, setReplacing] = useState(!settings.secretIsSet);
   const [secret, setSecret] = useState('');
+  const [certificatePath, setCertificatePath] = useState(settings.certificatePath);
+  const [certificatePassword, setCertificatePassword] = useState('');
   const [test, setTest] = useState<AdminTestResult | null>(null);
   const [testing, setTesting] = useState(false);
 
@@ -38,6 +40,8 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
     tenantId !== settings.tenantId ||
     clientId !== settings.clientId ||
     timeZone !== settings.timeZone ||
+    certificatePath !== settings.certificatePath ||
+    certificatePassword.length > 0 ||
     (replacing && secret.length > 0);
 
   function save() {
@@ -48,11 +52,15 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
         clientId,
         timeZone,
         baseUrl: settings.baseUrl,
+        certificatePath,
         secretAction: replacing && secret.length > 0 ? 'Set' : 'Keep',
         secret: replacing && secret.length > 0 ? secret : undefined,
+        certificatePasswordAction: certificatePassword.length > 0 ? 'Set' : 'Keep',
+        certificatePassword: certificatePassword.length > 0 ? certificatePassword : undefined,
       },
     });
     setSecret('');
+    setCertificatePassword('');
   }
 
   function clearSecret() {
@@ -63,7 +71,9 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
         clientId,
         timeZone,
         baseUrl: settings.baseUrl,
+        certificatePath,
         secretAction: 'Clear',
+        certificatePasswordAction: 'Keep',
       },
     });
     setSecret('');
@@ -102,15 +112,7 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
         error={errorFor(errors, 'graph.clientId')}
       />
 
-      {settings.authMode === 'certificate' ? (
-        <Field label="Inloggen" hint="Ingesteld in het configuratiebestand op dit apparaat.">
-          <p className="admin-readonly">
-            Dit apparaat gebruikt een certificaat. Dat gaat voor op een secret en kan hier
-            niet worden gewijzigd.
-          </p>
-        </Field>
-      ) : (
-        <Field
+      <Field
           label="Client secret"
           htmlFor="graph-secret"
           error={errorFor(errors, 'graph.secret')}
@@ -150,7 +152,36 @@ export function GraphSettingsForm({ settings, errors, busy, saved, onSave }: Pro
               </button>
             </div>
           )}
-        </Field>
+      </Field>
+
+      <TextField
+        id="graph-certificate"
+        label="Certificaat (optioneel)"
+        value={certificatePath}
+        onChange={setCertificatePath}
+        placeholder="/var/lib/zuil/zuil-graph.pfx"
+        hint={
+          settings.authMode === 'certificate'
+            ? 'In gebruik. Een certificaat gaat voor op de secret hierboven.'
+            : 'Pad naar een .pfx op dit apparaat. Sterker dan een secret voor een onbeheerde zuil; laat leeg om de secret te gebruiken.'
+        }
+        error={errorFor(errors, 'graph.certificatePath')}
+      />
+
+      {certificatePath.length > 0 && (
+        <TextField
+          id="graph-certificate-password"
+          label="Wachtwoord van het certificaat"
+          type="password"
+          value={certificatePassword}
+          onChange={setCertificatePassword}
+          placeholder={settings.certificatePasswordIsSet ? '••••••••' : 'Leeg laten als er geen is'}
+          hint={
+            settings.certificatePasswordIsSet
+              ? 'Er is er een opgeslagen. Laat leeg om die te behouden.'
+              : undefined
+          }
+        />
       )}
 
       <TextField

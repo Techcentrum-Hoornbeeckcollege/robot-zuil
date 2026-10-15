@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Zuil.Storage.Tests;
 
@@ -20,21 +19,15 @@ internal sealed class TestDatabase : IDisposable
         _directory = Path.Combine(Path.GetTempPath(), "zuil-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(_directory);
 
-        Path_ = Path.Combine(_directory, "zuil-cache.db");
-
-        Database = new ZuilDatabase(
-            Options.Create(new StorageOptions { DatabasePath = Path_ }),
-            NullLogger<ZuilDatabase>.Instance);
+        Database = new ZuilDatabase(_directory, NullLogger<ZuilDatabase>.Instance);
+        Path_ = Database.DatabasePath;
 
         Protector = new AesGcmSecretProtector(
             Database.SecretKeyPath,
             NullLogger<AesGcmSecretProtector>.Instance);
 
         Settings = new SqliteSettingsStore(
-            Database,
-            Protector,
-            Options.Create(new GraphCredentialOptions()),
-            NullLogger<SqliteSettingsStore>.Instance);
+            Database, Protector, NullLogger<SqliteSettingsStore>.Instance);
 
         Meetings = new SqliteMeetingStore(Database, NullLogger<SqliteMeetingStore>.Instance);
     }

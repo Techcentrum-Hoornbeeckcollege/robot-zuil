@@ -666,3 +666,60 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* The Settings tab sits apart from the agenda tabs: staff, not visitors. */
+.nav-button-settings {
+  flex: 0 0 auto;
+  color: var(--muted);
+  background: #0a1622;
+}
+
+/* Device commands: one block per command, rendered from the host's catalogue.
+   Touch targets stay large because this is operated with a finger on a
+   wall-mounted screen, often by someone standing on a stepladder. */
+.admin-command {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 0;
+  border-top: 1px solid #28455f;
+}
+
+.admin-command:first-of-type {
+  border-top: none;
+  padding-top: 8px;
+}
+
+.admin-command-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.admin-command-code {
+  margin-left: 12px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.admin-slider {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.input-range {
+  flex: 1;
+  /* The default track is a few pixels tall, which is not a finger target. */
+  height: 44px;
+  accent-color: var(--accent);
+}
+
+.admin-slider-value {
+  min-width: 7rem;
+  text-align: right;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}

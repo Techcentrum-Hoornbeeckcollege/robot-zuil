@@ -56,7 +56,7 @@ public class MigrationTests
 
     /// <summary>
     /// The seeded marker must not be reset by a later boot, or an administrator
-    /// who deleted every room would find them back from config/rooms.json.
+    /// who deleted every room would find them back from the built-in defaults.
     /// </summary>
     [Fact]
     public async Task Re_applying_does_not_reset_the_seeded_marker()

@@ -204,7 +204,7 @@ public class SqliteSettingsStoreTests
 
     /// <summary>
     /// The guard that stops an administrator's deliberate deletions coming back
-    /// from config/rooms.json on the next restart.
+    /// from the built-in defaults on the next restart.
     /// </summary>
     [Fact]
     public async Task Tracks_whether_the_first_run_seed_has_happened()

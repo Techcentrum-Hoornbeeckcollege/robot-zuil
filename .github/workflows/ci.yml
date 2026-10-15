@@ -46,7 +46,7 @@ jobs:
         run: |
           chmod +x scripts/*.sh artifacts/linux-x64/zuil
           mkdir -p release
-          cp -r deploy config scripts release/
+          cp -r deploy scripts release/
           cp -r artifacts/linux-x64 release/linux-x64
           chmod +x release/scripts/*.sh release/linux-x64/zuil
           cd release

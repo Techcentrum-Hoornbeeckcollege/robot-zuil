@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
 using System.Device.Gpio;
 using System.Device.I2c;
+using System.Diagnostics;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Devices;
 using Zuil.Core.Settings;
 
 namespace Zuil.Device;
@@ -64,26 +66,18 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 
     public event EventHandler<DeviceEvent>? DeviceEventReceived;
 
-    public async Task<bool> PingAsync(CancellationToken ct)
-    {
-        var response = await TransactAsync(DeviceCommand.Ping, [], expectResponse: true, ct);
-        IsConnected = response is { Code: (byte)DeviceResponse.Pong };
-        return IsConnected;
-    }
-
-    public async Task ShowDirectionAsync(byte signalId, CancellationToken ct) =>
-        await TransactAsync(
-            DeviceCommand.ShowDirection, [signalId], expectResponse: true, ct);
-
-    public async Task ClearAsync(CancellationToken ct) =>
-        await TransactAsync(DeviceCommand.Clear, [], expectResponse: true, ct);
-
-    private async Task<DeviceEvent?> TransactAsync(
-        DeviceCommand command,
-        byte[] payload,
-        bool expectResponse,
+    /// <summary>
+    /// The single transfer. Everything named — ping, show direction, clear —
+    /// arrives here as an already-validated instruction, so this method is only
+    /// concerned with the bus: allowlist, rate limit, frame, write, wait, read,
+    /// retry.
+    /// </summary>
+    public async Task<DeviceReply?> SendAsync(
+        DeviceInstruction instruction,
         CancellationToken ct)
     {
+        var command = instruction.Command;
+
         if (!_policy.IsAllowed(command))
         {
             throw new InvalidOperationException($"Command {command} is not allowlisted.");
@@ -95,12 +89,13 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
             return null;
         }
 
-        var frame = Framing.Encode(command, payload);
+        var frame = Framing.Encode((byte)command, instruction.Payload.Span);
 
         // One snapshot per transfer: an administrator raising the retry count
         // mid-transfer must not change the bound the loop is already running to.
         var device = _settings.Current.Device;
         var maxRetries = Math.Max(1, device.MaxRetries);
+        var started = Stopwatch.GetTimestamp();
 
         await _busLock.WaitAsync(ct);
         try
@@ -111,7 +106,7 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
                 {
                     _device.Write(frame);
 
-                    if (!expectResponse)
+                    if (!instruction.ExpectsReply)
                     {
                         return null;
                     }
@@ -124,11 +119,17 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
 
                     if (Framing.TryDecode(buffer, out var code, out var responsePayload))
                     {
-                        return new DeviceEvent
+                        // Any decodable reply proves the link works, whatever the
+                        // firmware thought of the command itself.
+                        IsConnected = true;
+
+                        return new DeviceReply
                         {
                             Code = code,
                             Payload = responsePayload,
                             ReceivedAt = DateTimeOffset.UtcNow,
+                            RoundTrip = Stopwatch.GetElapsedTime(started),
+                            Attempts = attempt,
                         };
                     }
 
@@ -164,12 +165,16 @@ public sealed class Esp32I2cBridge : IDeviceBridge, IDisposable
         {
             try
             {
-                var evt = await TransactAsync(
-                    DeviceCommand.ReadEvent, [], expectResponse: true, CancellationToken.None);
+                var reply = await this.ReadEventAsync(CancellationToken.None);
 
-                if (evt is not null && evt.Code != (byte)DeviceResponse.NoEvent)
+                if (reply is not null && reply.Code != (byte)DeviceResponse.NoEvent)
                 {
-                    DeviceEventReceived?.Invoke(this, evt);
+                    DeviceEventReceived?.Invoke(this, new DeviceEvent
+                    {
+                        Code = reply.Code,
+                        Payload = reply.Payload,
+                        ReceivedAt = reply.ReceivedAt,
+                    });
                 }
             }
             catch (Exception ex)

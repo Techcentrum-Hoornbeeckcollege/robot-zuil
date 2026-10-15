@@ -8,7 +8,7 @@ interface Result {
   /** Null when the last attempt succeeded or none has been made. */
   error: string | null;
   busy: boolean;
-  login: (password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -41,12 +41,12 @@ export function useAdminSession(): Result {
     return () => controller.abort();
   }, []);
 
-  const login = useCallback(async (password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     setBusy(true);
     setError(null);
 
     try {
-      setSession(await api.adminLogin(password));
+      setSession(await api.adminLogin(username, password));
       return true;
     } catch (caught) {
       // The server's own wording, since it distinguishes a wrong password from

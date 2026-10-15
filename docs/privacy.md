@@ -91,24 +91,26 @@ past and glanced at the board.
 
 ## The admin panel
 
-**The password is weak by default.** `Admin:Password` ships as `12345678`. The
-mitigations are real but limited: Kestrel binds `127.0.0.1` plaintext so there
-is no network attacker, login is rate-limited per IP, failures are counted in
-the database so pulling the plug does not reset the lockout, and comparison is
-constant-time. What none of that addresses is that the kiosk's own Chromium can
-reach `/api/admin` and the touchscreen is the keyboard. **Anyone who has read
-this repository can open the settings panel from the lobby until the password is
-changed.** `scripts/installzuil.sh` generates a random one; the panel shows a warning
-banner and the host logs one on every start until it is no longer the default.
+**The credentials are weak by default.** The kiosk ships as `admin` /
+`password`, seeded on first run because there is no configuration file to put
+anything else in. The mitigations are real but limited: Kestrel binds
+`127.0.0.1` plaintext so there is no network attacker, login is rate-limited per
+IP, failures are counted in the database so pulling the plug does not reset the
+lockout, the password is stored as a PBKDF2-HMAC-SHA256 hash, and a wrong
+username costs the same as a wrong password so the endpoint cannot be used to
+enumerate accounts.
 
-Corollary: **the Kestrel bind URL must never become editable from the GUI.**
-Binding it to the LAN would turn a plaintext default password into a network
-credential.
+What none of that addresses is that **Instellingen is a visible tab**, the
+kiosk's own Chromium reaches it, and the touchscreen is the keyboard. **Until
+the credentials are changed, anyone who has read this repository can reconfigure
+the kiosk from the lobby** — including turning meeting subjects on. The login
+screen, the panel, the diagnostics page and the startup log all say so. That is
+the whole of the defence, and it was a deliberate choice over forcing a change
+on first login.
 
-**The way in is deliberately obscure.** No settings button — a visitor who
-finds one on a lobby kiosk will press it. The panel opens on a three-second
-press in the bottom-right corner, and always to the login prompt, never to the
-settings directly.
+Corollary: **the listening host is not a setting and must not become one.** The
+port is editable; `127.0.0.1` is a constant in the code. Binding to the LAN
+would turn a weak default password into a network credential.
 
 **Sessions are opaque tokens, hashed server-side**, in an `HttpOnly`
 `SameSite=Strict` cookie scoped to `/api/admin`, with a sliding 15-minute
@@ -134,17 +136,17 @@ certificate in a TPM, is the real answer.
 
 **Consequences worth writing down:**
 
-- `zuil-cache.db` now holds a credential. Backups of it are sensitive, and
-  `*.db*` must stay in `.gitignore`.
+- `zuil-cache.db` now holds the Outlook credential and the admin password hash.
+  Backups of it are sensitive, and `*.db*` must stay in `.gitignore`.
 - The database and `secret.key` have to be backed up *together*. Either one
   alone cannot recover the credential, and an update must clobber neither.
 - The secret is write-only across the API. `GET /api/admin/settings` returns
   `secretIsSet` and no value — not even a length, which would leak something.
   `PUT` takes an explicit `secretAction` of `keep`/`set`/`clear`.
-- A certificate configured in a file still wins over a stored secret, so a site
-  that already follows [outlook-setup.md](outlook-setup.md) loses nothing. A
-  certificate remains the better credential for an unattended machine in a
-  public building.
+- A configured certificate still wins over a stored secret. Its path and
+  password are now settings like everything else — the `.pfx` itself is still a
+  file somebody puts on the device. A certificate remains the better credential
+  for an unattended machine in a public building.
 - `GET /api/health` is unauthenticated, so the sync error it reports is a short
   sanitised description. The raw message, which for Graph failures can quote a
   response body, is behind `GET /api/admin/diagnostics`.

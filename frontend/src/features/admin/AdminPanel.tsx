@@ -4,6 +4,7 @@ import type { AdminFieldError, AdminRoom, AdminSettings, AdminSettingsUpdate } f
 import { useIdleReset } from '../../hooks/useIdleReset';
 import { ADMIN_TABS } from '../../shell/viewState';
 import type { AdminTab } from '../../shell/viewState';
+import { AccountForm } from './AccountForm';
 import { DeviceSettingsForm } from './DeviceSettingsForm';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { DisplaySettingsForm } from './DisplaySettingsForm';
@@ -11,6 +12,7 @@ import { GraphSettingsForm } from './GraphSettingsForm';
 import { PrivacySettingsForm } from './PrivacySettingsForm';
 import { RoomsEditor } from './RoomsEditor';
 import { SyncSettingsForm } from './SyncSettingsForm';
+import { SystemSettingsForm } from './SystemSettingsForm';
 
 interface Props {
   tab: AdminTab;
@@ -128,11 +130,11 @@ export function AdminPanel({ tab, onTab, onLeave, onChanged }: Props) {
         </button>
       </header>
 
-      {settings.passwordIsDefault && (
+      {settings.credentialsAreDefault && (
         <p className="warning">
-          Het beheerwachtwoord staat nog op de standaardwaarde. Iedereen die deze zuil kent,
-          kan hier dus binnen. Stel <code>ZUIL_Admin__Password</code> in op dit apparaat en
-          start de dienst opnieuw.
+          Dit apparaat gebruikt nog de standaardgegevens voor beheer. Iedereen die dit
+          project kent, kan hier dus binnen. Stel onder <strong>Account</strong> een eigen
+          gebruikersnaam en wachtwoord in.
         </p>
       )}
 
@@ -215,6 +217,28 @@ export function AdminPanel({ tab, onTab, onLeave, onChanged }: Props) {
           busy={busy}
           saved={saved}
           onSave={save}
+        />
+      )}
+
+      {tab === 'system' && (
+        <SystemSettingsForm
+          key={JSON.stringify([settings.security, settings.network, settings.browser])}
+          security={settings.security}
+          network={settings.network}
+          browser={settings.browser}
+          errors={errors}
+          busy={busy}
+          saved={saved}
+          onSave={save}
+        />
+      )}
+
+      {tab === 'account' && (
+        <AccountForm
+          key={settings.username}
+          username={settings.username}
+          credentialsAreDefault={settings.credentialsAreDefault}
+          onChanged={onLeave}
         />
       )}
 

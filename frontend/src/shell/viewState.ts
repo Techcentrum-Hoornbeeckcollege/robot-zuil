@@ -8,6 +8,8 @@ export type AdminTab =
   | 'privacy'
   | 'device'
   | 'display'
+  | 'system'
+  | 'account'
   | 'diagnostics';
 
 /**
@@ -63,5 +65,7 @@ export const ADMIN_TABS: readonly { id: AdminTab; label: string }[] = [
   { id: 'privacy', label: 'Privacy' },
   { id: 'device', label: 'Apparaat' },
   { id: 'display', label: 'Weergave' },
+  { id: 'system', label: 'Systeem' },
+  { id: 'account', label: 'Account' },
   { id: 'diagnostics', label: 'Diagnose' },
 ];

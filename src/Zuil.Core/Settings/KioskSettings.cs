@@ -10,10 +10,11 @@ namespace Zuil.Core.Settings;
 /// once at the top of each pass, so a setting edited halfway through can never
 /// mix two room lists into a single cache swap.
 ///
-/// What is deliberately *not* here: the admin password, the database path, the
-/// Kestrel bind URL and the Chromium path. Those stay in configuration because
-/// making the bind address editable would turn a plaintext default password into
-/// a LAN credential, and the rest cannot change without a restart anyway.
+/// As of 0.3 this is everything: there are no configuration files and no
+/// environment variables. The only thing not in here is where the database
+/// itself lives, which cannot be, since this is inside it — see
+/// Zuil.Storage.DataDirectory. The admin credentials are in the database too,
+/// in their own table, because a password hash is not a setting.
 /// </summary>
 public sealed record KioskSettings
 {
@@ -26,6 +27,12 @@ public sealed record KioskSettings
     public PrivacySettings Privacy { get; init; } = new();
 
     public UiSettings Ui { get; init; } = new();
+
+    public SecuritySettings Security { get; init; } = new();
+
+    public NetworkSettings Network { get; init; } = new();
+
+    public BrowserSettings Browser { get; init; } = new();
 
     /// <summary>
     /// The rooms this column routes to. Part of the snapshot so a room edit and
@@ -56,8 +63,23 @@ public sealed record GraphSettings
     public string TimeZone { get; init; } = "Europe/Amsterdam";
 
     /// <summary>
-    /// Whether a secret is stored, so the admin panel can say "ingesteld"
-    /// without the value ever leaving the database. Never persisted directly.
+    /// Path to a .pfx on the device. When set it wins over the client secret: a
+    /// certificate is the stronger credential for an unattended machine in a
+    /// public building. The file still has to be put there by hand; only the
+    /// path is a setting.
+    /// </summary>
+    public string CertificatePath { get; init; } = "";
+
+    /// <summary>
+    /// Whether a certificate password is stored. Like the client secret, the
+    /// value itself is encrypted and never read back out.
+    /// </summary>
+    public bool CertificatePasswordIsSet { get; init; }
+
+    /// <summary>
+    /// Whether a client secret is stored, so the admin panel can say
+    /// "ingesteld" without the value ever leaving the database. Never persisted
+    /// directly.
     /// </summary>
     public bool SecretIsSet { get; init; }
 }
@@ -153,6 +175,57 @@ public sealed record UiSettings
 
     /// <summary>Whether the agenda buttons appear at all, for a site that only wants search.</summary>
     public bool ShowAgendaNav { get; init; } = true;
+}
+
+/// <summary>
+/// How the admin session behaves. The credentials themselves are not here;
+/// they live in their own table.
+/// </summary>
+public sealed record SecuritySettings
+{
+    /// <summary>
+    /// How long an admin session survives without a request. Sliding, so
+    /// working through the settings does not log you out mid-edit.
+    /// </summary>
+    public TimeSpan SessionIdleTimeout { get; init; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>Failed logins within <see cref="LockoutWindow"/> before login is refused.</summary>
+    public int MaxFailedAttempts { get; init; } = 5;
+
+    /// <summary>
+    /// How far back failures count. The ledger is in the database rather than in
+    /// memory, so pulling the plug does not reset it.
+    /// </summary>
+    public TimeSpan LockoutWindow { get; init; } = TimeSpan.FromMinutes(5);
+}
+
+/// <summary>
+/// What the kiosk listens on.
+///
+/// The host is fixed at 127.0.0.1 and is not a setting. Binding this to the LAN
+/// would put the admin panel — and whatever password it currently has — on the
+/// building network over plain HTTP. The port is editable because it is
+/// occasionally genuinely in the way.
+/// </summary>
+public sealed record NetworkSettings
+{
+    public const string Host = "127.0.0.1";
+
+    public int Port { get; init; } = 5000;
+
+    /// <summary>The URL Kestrel binds, and the one the kiosk browser opens.</summary>
+    public string Url => $"http://{Host}:{Port}";
+}
+
+/// <summary>
+/// The browser the host launches when it is not managed by systemd. On the Pi
+/// zuil-kiosk.service owns Chromium, so this stays off.
+/// </summary>
+public sealed record BrowserSettings
+{
+    public bool LaunchBrowser { get; init; }
+
+    public string BrowserPath { get; init; } = "chromium-browser";
 }
 
 /// <summary>The kiosk's resting screen.</summary>
