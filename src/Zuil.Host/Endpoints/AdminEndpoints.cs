@@ -44,6 +44,7 @@ public static class AdminEndpoints
         MapSettingsEndpoints(admin);
         MapAdminRoomEndpoints(admin);
         MapToolEndpoints(admin);
+        MapUpdateEndpoints(admin);
     }
 
     private static void MapSessionEndpoints(IEndpointRouteBuilder app)
@@ -524,6 +525,42 @@ public static class AdminEndpoints
             var secretIsSet = await store.HasGraphSecretAsync(ct);
             var credential = await store.GetAdminCredentialAsync(ct);
             return Results.Ok(ToResponse(settings.Current, secretIsSet, credential));
+        });
+    }
+
+    private static void MapUpdateEndpoints(IEndpointRouteBuilder admin)
+    {
+        admin.MapPost("/update", (
+            ILoggerFactory loggerFactory) =>
+        {
+            try
+            {
+                Directory.CreateDirectory("/run/zuil-update");
+                File.WriteAllText(
+                    "/run/zuil-update/request",
+                    $"{DateTimeOffset.UtcNow:O}\n",
+                    Encoding.UTF8);
+
+                loggerFactory.CreateLogger(AdminLogCategory)
+                    .LogInformation("Manual update requested from the admin panel");
+                return Results.Accepted();
+            }
+            catch (IOException exception)
+            {
+                loggerFactory.CreateLogger(AdminLogCategory)
+                    .LogError(exception, "Could not request a manual update");
+                return Results.Problem(
+                    "De update kon niet worden gestart.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                loggerFactory.CreateLogger(AdminLogCategory)
+                    .LogError(exception, "Manual update request directory is not writable");
+                return Results.Problem(
+                    "De updatefunctie is niet beschikbaar op dit apparaat.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         });
     }
 

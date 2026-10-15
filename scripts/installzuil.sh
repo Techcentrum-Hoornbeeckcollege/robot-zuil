@@ -15,22 +15,24 @@ echo "==> Installing system dependencies"
 # The .NET self-contained binary needs ICU on the host for globalization
 # (InvariantGlobalization is false — see Directory.Build.props). curl is
 # needed by zuil-kiosk.service's ExecStartPre health check.
-if command -v apt-get >/dev/null 2>&1; then
+if [ "${ZUIL_SKIP_DEPENDENCIES:-0}" = "1" ]; then
+  echo "    dependency installation skipped"
+elif command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq
   # ICU package name varies by distro version (libicu70, libicu72, libicu74 …)
   ICU_PKG="$(apt-cache search '^libicu[0-9]' 2>/dev/null | grep -v -- '-dev' | head -1 | cut -d' ' -f1)"
   if [ -n "$ICU_PKG" ]; then
-    apt-get install -y --no-install-recommends "$ICU_PKG" curl
-    echo "    installed $ICU_PKG and curl"
+    apt-get install -y --no-install-recommends "$ICU_PKG" curl unzip
+    echo "    installed $ICU_PKG, curl and unzip"
   else
     echo "    WARNING: Could not find ICU package; install libicu manually." >&2
   fi
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y libicu curl
-  echo "    installed libicu and curl"
+  dnf install -y libicu curl unzip
+  echo "    installed libicu, curl and unzip"
 elif command -v yum >/dev/null 2>&1; then
-  yum install -y libicu curl
-  echo "    installed libicu and curl"
+  yum install -y libicu curl unzip
+  echo "    installed libicu, curl and unzip"
 else
   echo "    WARNING: No supported package manager found (apt/dnf/yum)."
   echo "    Install libicu and curl manually before starting the service." >&2
@@ -70,6 +72,7 @@ fi
 # Generate a unique release ID using timestamp (or git commit / version)
 RELEASE_ID="$(date +%Y%m%d_%H%M%S)"
 RELEASE_DIR="$DEST/releases/$RELEASE_ID"
+RELEASE_TAG="${ZUIL_RELEASE_TAG:-manual-$RELEASE_ID}"
 
 echo "==> Staging new release to $RELEASE_DIR"
 # Only the release goes here. There is nothing to seed and nothing to preserve:
@@ -84,6 +87,7 @@ find "$RELEASE_DIR" -type f \( -name "*.sh" -o -name "*.py" -o -executable -o ! 
 echo "==> Updating active symlink"
 ln -sfn "$RELEASE_DIR" "$DEST/current"
 echo "$RELEASE_ID" > "$DEST/version"
+printf '%s\n' "$RELEASE_TAG" > "$DEST/release-tag"
 
 echo "==> Setting secure permissions"
 chown -R zuil:zuil "$DEST" /var/cache/zuil
@@ -91,11 +95,23 @@ chown -R zuil:zuil "$DEST" /var/cache/zuil
 echo "==> Installing systemd units"
 # Copy directly from the repository deploy/ folder or fallback to local dir
 if [ -d "$DEPLOY/../deploy" ]; then
-  cp "$DEPLOY/../deploy/zuil.service" "$DEPLOY/../deploy/zuil-kiosk.service" /etc/systemd/system/
+  cp "$DEPLOY/../deploy/zuil.service" "$DEPLOY/../deploy/zuil-kiosk.service" \
+    "$DEPLOY/../deploy/zuil-update.service" "$DEPLOY/../deploy/zuil-update.timer" \
+    "$DEPLOY/../deploy/zuil-update.path" "$DEPLOY/../deploy/zuil-update-tmpfiles.conf" \
+    /etc/systemd/system/
+  cp "$DEPLOY/../deploy/zuil-update-tmpfiles.conf" /etc/tmpfiles.d/zuil-update.conf
 elif [ -d "$DEPLOY/deploy" ]; then
-  cp "$DEPLOY/deploy/zuil.service" "$DEPLOY/deploy/zuil-kiosk.service" /etc/systemd/system/
+  cp "$DEPLOY/deploy/zuil.service" "$DEPLOY/deploy/zuil-kiosk.service" \
+    "$DEPLOY/deploy/zuil-update.service" "$DEPLOY/deploy/zuil-update.timer" \
+    "$DEPLOY/deploy/zuil-update.path" "$DEPLOY/deploy/zuil-update-tmpfiles.conf" \
+    /etc/systemd/system/
+  cp "$DEPLOY/deploy/zuil-update-tmpfiles.conf" /etc/tmpfiles.d/zuil-update.conf
 elif [ -f "$DEPLOY/zuil.service" ]; then
-  cp "$DEPLOY/zuil.service" "$DEPLOY/zuil-kiosk.service" /etc/systemd/system/
+  cp "$DEPLOY/zuil.service" "$DEPLOY/zuil-kiosk.service" \
+    "$DEPLOY/zuil-update.service" "$DEPLOY/zuil-update.timer" \
+    "$DEPLOY/zuil-update.path" "$DEPLOY/zuil-update-tmpfiles.conf" \
+    /etc/systemd/system/
+  cp "$DEPLOY/zuil-update-tmpfiles.conf" /etc/tmpfiles.d/zuil-update.conf
 else
   echo "    WARNING: No systemd unit files found to install." >&2
 fi
@@ -104,11 +120,14 @@ fi
 # container). On a real host this enables the services automatically.
 if [ -d /run/systemd/system ]; then
   systemctl daemon-reload
+  systemd-tmpfiles --create
   systemctl enable zuil.service zuil-kiosk.service
+  systemctl enable --now zuil-update.timer
+  systemctl enable --now zuil-update.path
 else
   echo "    systemd not running on this host; enable services manually:"
   echo "      sudo systemctl daemon-reload"
-  echo "      sudo systemctl enable --now zuil zuil-kiosk"
+  echo "      sudo systemctl enable --now zuil zuil-kiosk zuil-update.timer"
 fi
 
 echo

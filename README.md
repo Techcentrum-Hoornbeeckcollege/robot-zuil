@@ -88,6 +88,7 @@ This installer automatically:
 - Enables the I²C bus in `/boot/firmware/config.txt`.
 - Stages the build into an immutable release directory (`/opt/zuil/releases/<timestamp>/`) and atomically updates the active symlink (`/opt/zuil/current`).
 - Registers and enables the systemd services (`zuil.service` and `zuil-kiosk.service`).
+- Registers a daily automatic updater, scheduled around 17:00 local time.
 
 There is nothing to configure first — no config file, no environment file. The
 kiosk boots unconfigured, keeps its state in `/var/lib/zuil/`, and is set up
@@ -97,6 +98,14 @@ To start or check the services manually:
 ```bash
 sudo systemctl start zuil zuil-kiosk
 sudo journalctl -u zuil -f
+```
+
+The updater checks the latest stable GitHub release, verifies its SHA-256
+manifest, stages it as a new atomic release, checks `/api/health`, and rolls
+back to the previous release if startup fails. Run it immediately with:
+
+```bash
+sudo systemctl start zuil-update.service
 ```
 
 ### 3. Set it up from the touchscreen

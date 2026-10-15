@@ -1,0 +1,8 @@
+[Unit]
+Description=Robot Zuil automatic updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/zuil/current/scripts/updatezuil.sh

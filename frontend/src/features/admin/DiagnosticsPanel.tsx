@@ -32,6 +32,8 @@ function when(value: string | null): string {
 export function DiagnosticsPanel() {
   const [data, setData] = useState<AdminDiagnostics | null>(null);
   const [failed, setFailed] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api
@@ -49,6 +51,19 @@ export function DiagnosticsPanel() {
     const timer = setInterval(load, REFRESH_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  const requestUpdate = async () => {
+    setUpdateBusy(true);
+    setUpdateMessage(null);
+    try {
+      await api.adminRequestUpdate();
+      setUpdateMessage('De update is gestart. De zuil wordt zo opnieuw opgestart.');
+    } catch {
+      setUpdateMessage('De update kon niet worden gestart.');
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
 
   if (failed) {
     return <p className="error">De diagnose kon niet worden geladen.</p>;
@@ -121,7 +136,16 @@ export function DiagnosticsPanel() {
         <button className="button button-secondary" type="button" onClick={load}>
           Nu verversen
         </button>
+        <button
+          className="button button-secondary"
+          type="button"
+          disabled={updateBusy}
+          onClick={() => void requestUpdate()}
+        >
+          {updateBusy ? 'Update starten…' : 'Nu bijwerken'}
+        </button>
       </div>
+      {updateMessage && <p className="admin-field-hint">{updateMessage}</p>}
     </section>
   );
 }
