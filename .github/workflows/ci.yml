@@ -33,6 +33,11 @@ jobs:
           chmod +x build/build.sh
           ./build/build.sh linux-x64
 
+      - name: Verify the frontend is embedded in the binary
+        run: |
+          chmod +x build/verify-frontend-embedded.sh
+          ./build/verify-frontend-embedded.sh artifacts/linux-x64/zuil
+
       - name: Lint shell scripts
         run: |
           for f in scripts/*.sh build/*.sh; do
