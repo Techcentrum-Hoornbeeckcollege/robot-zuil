@@ -36,6 +36,10 @@
   <ItemGroup>
     <!-- Populated by build/build.sh from frontend/dist before publish. -->
     <EmbeddedResource Include="wwwroot/**/*" Exclude="wwwroot/.gitkeep" />
+
+    <!-- The starter room list. Embedded, not shipped beside the binary: this
+         build has no configuration files at all. See FirstRunSeeder. -->
+    <EmbeddedResource Include="Settings/default-rooms.json" />
     <Content Remove="wwwroot/**/*" />
   </ItemGroup>
 

@@ -67,7 +67,16 @@ export function DiagnosticsPanel() {
 
         <dt>Actieve beheersessies</dt>
         <dd>{data.activeSessions}</dd>
+
+        <dt>Gegevensmap</dt>
+        <dd>{data.dataDirectory}</dd>
       </dl>
+
+      {data.credentialsAreDefault && (
+        <p className="warning">
+          De beheergegevens staan nog op de standaardwaarde. Wijzig ze onder Account.
+        </p>
+      )}
 
       {data.stale && (
         <p className="warning">

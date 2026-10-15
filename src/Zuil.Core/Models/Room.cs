@@ -1,8 +1,9 @@
 namespace Zuil.Core.Models;
 
 /// <summary>
-/// A meeting room the kiosk can route visitors to. Loaded from config/rooms.json,
-/// not from Graph: Graph knows the mailbox, but only we know which way to walk.
+/// A meeting room the kiosk can route visitors to. Held in the kiosk's own
+/// settings, not read from Graph: Graph knows the mailbox, but only we know which
+/// way to walk.
 /// </summary>
 public sealed record Room
 {

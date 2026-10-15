@@ -9,14 +9,14 @@ It also shows what is on: **Straks**, every upcoming meeting across the building
 in order, and **Alle agenda's**, one column per room. Meeting subjects are hidden
 by default and the server is what hides them — see [docs/privacy.md](docs/privacy.md).
 
-Everything configurable is configured **from the touchscreen**: Outlook
-credentials, the room list and their walking directions, sync timing, device
-parameters, privacy and display. Hold the bottom-right corner for three seconds.
-See [docs/admin.md](docs/admin.md). Only what cannot change without a restart
-stays in a file.
+Everything configurable is configured **from the touchscreen** — tap
+**Instellingen**, log in, and set Outlook credentials, rooms and walking
+directions, sync timing, device parameters, privacy, display, the listening
+port and the admin account itself. See [docs/admin.md](docs/admin.md).
 
 Ships as **one self-contained binary** — frontend, backend and hardware driver
-in a single file.
+in a single file, with **no configuration files at all**. It keeps its state in
+one directory and is set up entirely from its own screen.
 
 ## Stack
 
@@ -26,7 +26,7 @@ in a single file.
 | Frontend | Vite + React + TypeScript, embedded in the binary as resources |
 | Outlook | MSAL for app-only tokens + Graph `/calendarView` over `HttpClient` |
 | Cache | SQLite (`Microsoft.Data.Sqlite`), WAL mode |
-| Settings | SQLite, edited from the GUI; the Graph secret encrypted with AES-GCM |
+| Settings | SQLite, edited from the GUI; the Graph secret and admin password hashed/encrypted |
 | Hardware | `System.Device.Gpio` → i2c to an ESP32 at 100 kHz |
 | Kiosk | systemd + Chromium `--kiosk` on the Pi |
 
@@ -34,7 +34,6 @@ in a single file.
 
 ```
 build/          build.sh (single binary) and dev.sh (laptop dev loop)
-config/         first-run room seed + the few file-only settings — ships BESIDE the binary
 deploy/         systemd units for the Pi
 scripts/        installzuil.sh (install or update) and runzuil.sh (manual run)
 docs/           architecture, Outlook setup, wiring, deployment, privacy, admin runbook
@@ -76,16 +75,7 @@ curl -sL https://github.com/Techcentrum-Hoornbeeckcollege/robot-zuil/releases/la
 unzip -o zuil-linux-arm64.zip
 ```
 
-### 2. Configure production settings
-
-Before starting the service, populate your Entra ID tenant and client credentials in the production config:
-
-```bash
-sudo nano /opt/zuil/config/appsettings.Production.json
-```
-*(Fill in your `TenantId`, `ClientId`, and certificate path/secret as detailed in [docs/outlook-setup.md](docs/outlook-setup.md)).*
-
-### 3. Run the installer / updater
+### 2. Run the installer / updater
 
 Run the unified idempotent installer/updater as root, pointing to the extracted `linux-arm64` directory:
 
@@ -97,14 +87,23 @@ This installer automatically:
 - Creates the dedicated `zuil` system user and grants hardware group permissions (`i2c`, `gpio`, `video`).
 - Enables the I²C bus in `/boot/firmware/config.txt`.
 - Stages the build into an immutable release directory (`/opt/zuil/releases/<timestamp>/`) and atomically updates the active symlink (`/opt/zuil/current`).
-- Handles production configuration templates safely without overwriting existing credentials.
 - Registers and enables the systemd services (`zuil.service` and `zuil-kiosk.service`).
+
+There is nothing to configure first — no config file, no environment file. The
+kiosk boots unconfigured, keeps its state in `/var/lib/zuil/`, and is set up
+from its own screen.
 
 To start or check the services manually:
 ```bash
 sudo systemctl start zuil zuil-kiosk
 sudo journalctl -u zuil -f
 ```
+
+### 3. Set it up from the touchscreen
+
+Tap **Instellingen**, log in with `admin` / `password`, change the credentials
+under **Account**, then fill in Outlook, the rooms and the rest. See
+[docs/admin.md](docs/admin.md) and [docs/outlook-setup.md](docs/outlook-setup.md).
 
 ## Build the deliverable
 
@@ -113,15 +112,15 @@ sudo journalctl -u zuil -f
 ./build/build.sh linux-x64       # x86_64 Ubuntu desktop
 ```
 
-Produces `artifacts/<rid>/zuil`. See [docs/deploy.md](docs/deploy.md).
+Produces `artifacts/<rid>/zuil` — one file, nothing beside it. See
+[docs/deploy.md](docs/deploy.md).
 
 ## Before this runs for real
 
-1. **Change the admin password.** It ships as `12345678`, the kiosk's own browser
-   can reach `/api/admin`, and the touchscreen is the keyboard — so until it is
-   changed, anyone who has read this repository can open the settings panel from
-   the lobby. `scripts/installzuil.sh` generates a random one into
-   `/opt/zuil/config/.env` and prints it once.
+1. **Change the admin credentials.** They ship as `admin` / `password`, and the
+   Instellingen tab is visible to anyone — so until you change them, anyone who
+   has read this repository can reconfigure the kiosk from the lobby. Do it
+   under Instellingen → Account on first login.
 2. **[docs/outlook-setup.md](docs/outlook-setup.md)** — register the Entra app,
    and *scope it to the six mailboxes with an `ApplicationAccessPolicy`*.
    Without that step, the credential on a device in a public lobby can read every
@@ -136,9 +135,10 @@ Produces `artifacts/<rid>/zuil`. See [docs/deploy.md](docs/deploy.md).
    the bus at 100 kHz.
 5. Make sure NTP works on the Pi. It has no RTC, and a wayfinding kiosk with a
    wrong clock confidently sends people to the wrong room.
-6. **Back up `/opt/zuil/data/` — the database and `secret.key` together.** The
-   database holds every setting and the encrypted Outlook credential; the key
-   file is what decrypts it. Either one alone recovers nothing.
+6. **Back up `/var/lib/zuil/` — the database and `secret.key` together.** The
+   database holds every setting, the admin password hash and the encrypted
+   Outlook credential; the key file is what decrypts it. Either one alone
+   recovers nothing.
 
 ## Known open decision
 

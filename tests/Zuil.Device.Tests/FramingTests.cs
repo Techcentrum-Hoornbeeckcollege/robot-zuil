@@ -1,3 +1,4 @@
+using Zuil.Core.Devices;
 using Zuil.Device;
 
 namespace Zuil.Device.Tests;

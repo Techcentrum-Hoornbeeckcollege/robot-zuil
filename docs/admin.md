@@ -4,36 +4,34 @@ Voor wie de zuil in de hal beheert. Geen programmeerkennis nodig.
 
 ## Binnenkomen
 
-Er is geen knop. Dat is bewust: een bezoeker die een knop "Instellingen" op een
-zuil in de hal ziet, drukt erop.
+1. Tik onderaan het scherm op **Instellingen**.
+2. Log in. Standaard is dat **`admin`** met wachtwoord **`password`**.
 
-1. Houd de **rechteronderhoek** van het scherm **drie seconden** ingedrukt. De
-   hoek licht heel zwak op zodra de zuil de druk herkent.
-2. Vul het beheerwachtwoord in.
-
-Na vijftien minuten zonder gebruik logt de zuil u uit. Het beheerscherm gaat al
-na twee minuten dicht, omdat een openstaand instellingenscherm in een openbare
-hal erger is dan een beginscherm.
+Na vijftien minuten zonder gebruik logt de zuil u uit (instelbaar onder
+Systeem). Het beheerscherm gaat al na twee minuten dicht, omdat een openstaand
+instellingenscherm in een openbare hal erger is dan een beginscherm.
 
 Vijf keer een verkeerd wachtwoord en inloggen wordt een paar minuten geweigerd.
 Dat blijft gelden als iemand de stekker eruit trekt.
 
-## Het wachtwoord
+## De inloggegevens
 
-Standaard is het `12345678`. **Verander dit.** Zolang het de standaardwaarde is,
-staat er een waarschuwing boven het beheerscherm, en kan iedereen die dit
-project kent bij de instellingen.
+Standaard `admin` / `password`. **Verander dit meteen**, onder
+**Instellingen → Account**.
 
-Het wachtwoord staat niet in de zuil zelf maar op het apparaat, zodat niemand
-het vanaf het touchscreen kan wijzigen. Op de Raspberry Pi:
+Zolang de standaardwaarden in gebruik zijn staat er een waarschuwing op het
+inlogscherm, boven het beheerscherm en onder Diagnose, en meldt de zuil het bij
+elke start in het logboek. Dat is ook alles wat eraan in de weg staat: de
+knop Instellingen is voor iedereen zichtbaar, dus tot u ze wijzigt kan iemand
+die dit project kent de zuil vanuit de hal opnieuw instellen.
 
-```bash
-sudo nano /opt/zuil/config/.env   # ZUIL_Admin__Password=...
-sudo systemctl restart zuil
-```
+Wijzigen vraagt om het huidige wachtwoord, ook als u alleen de gebruikersnaam
+aanpast. Na het opslaan worden alle beheersessies beëindigd.
 
-`scripts/installzuil.sh` zet daar bij een nieuwe installatie een willekeurig
-wachtwoord in en laat het één keer zien. Bewaar het.
+**Wachtwoord kwijt?** Er is geen bestand om aan te passen. Stop de dienst,
+verwijder `/var/lib/zuil/zuil-cache.db` en start opnieuw: de zuil begint dan
+weer met `admin` / `password`. Daarmee verdwijnen wel alle instellingen, de
+zalen en de opgeslagen Outlook-secret.
 
 ## De tabbladen
 
@@ -48,6 +46,10 @@ omgeving beheert; zie [outlook-setup.md](outlook-setup.md).
   u niet laten zien, ook niet als u erom vraagt.
 - **Tijdzone** is een IANA-naam, bijvoorbeeld `Europe/Amsterdam`. Bepaalt ook
   wanneer een dag begint op het agendabord.
+- **Certificaat** is optioneel: het pad naar een `.pfx` op dit apparaat. Een
+  certificaat is sterker dan een secret voor een onbeheerde zuil en gaat eroverheen
+  als u er een invult. Het bestand zet u er zelf neer; alleen het pad is een
+  instelling.
 
 **Verbinding testen** gebruikt wat is *opgeslagen*, niet wat in het formulier
 staat: sla eerst op. De test haalt één vergadering op uit het postvak van de
@@ -90,9 +92,9 @@ De zalen waar de zuil naar verwijst. Tik op een zaal om hem te wijzigen.
 - **Id** wordt automatisch uit de naam gemaakt en staat daarna vast, omdat hij
   in opgeslagen gegevens wordt gebruikt.
 
-Wijzigingen gaan in zodra u opslaat; opnieuw opstarten is niet nodig. Het
-oorspronkelijke `config/rooms.json` wordt alleen bij de állereerste start
-gelezen — het later aanpassen doet niets meer.
+Wijzigingen gaan in zodra u opslaat; opnieuw opstarten is niet nodig. Bij de
+állereerste start zet de zuil zes voorbeeldzalen klaar, zodat er iets op het
+scherm staat terwijl u hem inricht. Verwijdert u ze, dan komen ze niet terug.
 
 ### Privacy
 
@@ -121,6 +123,18 @@ opnieuw op.
 **Indicators testen** stuurt het lampje van één zaal aan, zodat u kunt zien of
 de juiste gaat branden. Handig na het verleggen van kabels.
 
+**Commando's versturen** laat alles zien wat de zuil naar de ESP32 kan sturen,
+met de waarden die elk commando meeneemt — en wat de ESP32 terugzegt (`PONG`,
+`ACK`, `NACK`), hoe lang dat duurde en na hoeveel pogingen. Dat laatste is waar
+een rammelende i2c-bus zichtbaar wordt: één poging is gezond, drie is een losse
+draad.
+
+Deze lijst komt van de zuil zelf en niet uit dit scherm. Krijgt de firmware een
+commando erbij — een hoogte, een kleur, een animatie — dan verschijnt de
+schuifregelaar hier automatisch, met het juiste bereik en de juiste eenheid. Voor
+de ontwikkelaar: dat is één regel in `DeviceCatalogue.cs`, zie
+[../schema/device-protocol.md](../schema/device-protocol.md#the-host-side-catalogue).
+
 ### Weergave
 
 **Beginscherm** is wat de zuil laat zien als er niemand bij staat: *Straks*
@@ -128,6 +142,24 @@ de juiste gaat branden. Handig na het verleggen van kabels.
 
 **Agendaknoppen onderaan** uit zetten maakt er weer een zuil van die alleen op
 naam zoekt.
+
+### Systeem
+
+De instellingen die vroeger in een configuratiebestand stonden.
+
+- **Beheersessie verloopt na**, **Pogingen voor blokkade** en **Blokkade duurt**
+  bepalen hoe streng het inloggen is. Mislukte pogingen worden in de database
+  bijgehouden, dus de stekker eruit trekken zet de teller niet terug.
+- **Poort** is de poort waarop de zuil luistert. Vereist een herstart.
+- **Adres** staat vast op `127.0.0.1` en is niet instelbaar. De zuil is dus
+  alleen vanaf het apparaat zelf te bereiken, en dat is precies wat een zwak
+  wachtwoord overleefbaar maakt.
+- **Browser zelf starten** laat u uit op de Pi: daar start `zuil-kiosk.service`
+  Chromium al.
+
+### Account
+
+Gebruikersnaam en wachtwoord voor beheer. Zie hierboven.
 
 ### Diagnose
 
@@ -159,12 +191,10 @@ Diagnose en gebruik daarna *Verbinding testen* onder Outlook.
 **De verkeerde indicator gaat aan.** Controleer de indicatornummers onder Zalen
 en test ze onder Apparaat.
 
-**Het beheerscherm is onbereikbaar en het wachtwoord is kwijt.** Zet een nieuw
-wachtwoord in `/opt/zuil/config/.env` en start de dienst opnieuw op.
+**Het beheerscherm is onbereikbaar en het wachtwoord is kwijt.** Zie hierboven
+bij De inloggegevens: de database weggooien zet alles terug.
 
-**Een instelling is onherstelbaar verprutst.** `rooms.json` en
-`appsettings.Production.json` in `/opt/zuil/config/` zijn alleen nog
-startwaarden. De werkelijke instellingen staan in
-`/opt/zuil/data/zuil-cache.db`; die weggooien zet alles terug op de
-standaardwaarden — maar daarmee verdwijnt ook de opgeslagen Outlook-secret, die
-u dan opnieuw moet invullen.
+**Een instelling is onherstelbaar verprutst.** Alles staat in
+`/var/lib/zuil/zuil-cache.db`. Die weggooien zet de zuil terug op de
+standaardwaarden, inclusief de zes voorbeeldzalen — maar daarmee verdwijnt ook
+de opgeslagen Outlook-secret, die u dan opnieuw moet invullen.

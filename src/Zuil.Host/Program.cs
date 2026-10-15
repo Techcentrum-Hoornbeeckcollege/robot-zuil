@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Reflection;
 using System.Threading.RateLimiting;
@@ -24,64 +23,65 @@ var noKiosk = args.Contains("--no-kiosk");
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuration lives in a directory beside the binary, not inside it: room
-// directions change with the building, and credentials must never be compiled in.
+// There are no configuration files and no environment variables. Everything an
+// operator can set is in the database and editable from the GUI; the only thing
+// that cannot be, because it is where the settings live, is the database's own
+// location — and that is decided by rules rather than by a file somebody has to
+// write. See Zuil.Storage.DataDirectory.
 //
-// ZUIL_CONFIG_DIR overrides where that is, because scripts/installzuil.sh
-// installs each build into /opt/zuil/releases/<timestamp>/ behind a `current`
-// symlink — so a config directory next to the binary is a *release* artefact
-// that gets thrown away on the next update, taking the operator's settings with
-// it. The persistent one lives at /opt/zuil/config.
-//
-// Read straight from the environment rather than through IConfiguration,
-// because this decides which files IConfiguration is then built from.
-var configDir = Environment.GetEnvironmentVariable("ZUIL_CONFIG_DIR") is { Length: > 0 } configured
-    ? Path.GetFullPath(configured)
-    : Path.Combine(AppContext.BaseDirectory, "config");
+// This all happens before builder.Build(), because the port Kestrel binds is
+// itself one of the settings.
+// Logging defaults live here rather than in a settings file, because a
+// single exe means exactly one file: nothing beside it to copy, lose, or forget
+// to update. systemd captures stdout, so the console provider is the whole
+// story on the Pi.
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(console => console.TimestampFormat = "HH:mm:ss ");
+builder.Logging.SetMinimumLevel(LogLevel.Information);
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
 
-builder.Configuration
-    .AddJsonFile(Path.Combine(configDir, "appsettings.json"), optional: true, reloadOnChange: true)
-    .AddJsonFile(
-        Path.Combine(configDir, $"appsettings.{builder.Environment.EnvironmentName}.json"),
-        optional: true,
-        reloadOnChange: true)
-    .AddEnvironmentVariables("ZUIL_");
+using var bootstrapLoggers = LoggerFactory.Create(logging =>
+{
+    logging.AddSimpleConsole(console => console.TimestampFormat = "HH:mm:ss ");
+    logging.SetMinimumLevel(LogLevel.Information);
+});
 
-// Graph credentials, sync timing and device parameters now live in the database
-// and are edited from the admin panel, so they are no longer bound here. What
-// remains in configuration is what cannot change without a restart anyway.
-builder.Services.Configure<StorageOptions>(
-    builder.Configuration.GetSection(StorageOptions.SectionName));
-builder.Services.Configure<KioskOptions>(
-    builder.Configuration.GetSection(KioskOptions.SectionName));
+var dataDirectory = DataDirectory.Resolve(bootstrapLoggers.CreateLogger(typeof(DataDirectory)));
 
-// The admin password stays in configuration, not the database: a password a
-// visitor could change from the touchscreen is not a password.
-builder.Services.Configure<AdminOptions>(
-    builder.Configuration.GetSection(AdminOptions.SectionName));
+var database = new ZuilDatabase(dataDirectory, bootstrapLoggers.CreateLogger<ZuilDatabase>());
 
-// The certificate escape hatch stays file-only and wins over a stored secret,
-// so a site already following docs/outlook-setup.md loses nothing by upgrading.
-builder.Services.Configure<GraphCredentialOptions>(
-    builder.Configuration.GetSection(GraphCredentialOptions.SectionName));
+var secretProtector = new AesGcmSecretProtector(
+    database.SecretKeyPath,
+    bootstrapLoggers.CreateLogger<AesGcmSecretProtector>());
+
+var settingsStore = new SqliteSettingsStore(
+    database, secretProtector, bootstrapLoggers.CreateLogger<SqliteSettingsStore>());
+
+// Seed admin/password on first run. Weak on purpose so a fresh kiosk is
+// reachable; the panel warns until it is changed.
+await AdminBootstrap.EnsureCredentialAsync(
+    settingsStore, bootstrapLoggers.CreateLogger(typeof(AdminBootstrap)), CancellationToken.None);
+
+var startupSettings = await settingsStore.LoadAsync(CancellationToken.None);
+
+// Loopback only, always. NetworkSettings.Host is a constant and no request can
+// change it: putting the admin panel on the building network over plain HTTP
+// would leave whatever password it currently has as the only thing in the way.
+builder.WebHost.UseUrls(startupSettings.Network.Url);
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// One connection and one write lock, shared by both stores. A second connection
-// would reintroduce the SQLITE_BUSY contention this arrangement avoids.
-builder.Services.AddSingleton<ZuilDatabase>();
-
-// The key lives beside the database, not in the single-file extraction
-// directory, which is versioned per binary hash and wiped on the next deploy.
-builder.Services.AddSingleton(sp => new AesGcmSecretProtector(
-    sp.GetRequiredService<ZuilDatabase>().SecretKeyPath,
-    sp.GetRequiredService<ILogger<AesGcmSecretProtector>>()));
+// Registered as the very instances built above, so nothing opens the database
+// twice.
+builder.Services.AddSingleton(database);
+builder.Services.AddSingleton(secretProtector);
+builder.Services.AddSingleton(settingsStore);
 
 // One instance behind two interfaces: ISettingsStore is what the admin panel
 // gets and cannot read the Graph secret, IGraphCredentialSource is the only
 // thing that can. See the comments on those interfaces.
-builder.Services.AddSingleton<SqliteSettingsStore>();
 builder.Services.AddSingleton<ISettingsStore>(
     sp => sp.GetRequiredService<SqliteSettingsStore>());
 builder.Services.AddSingleton<IGraphCredentialSource>(
@@ -89,10 +89,11 @@ builder.Services.AddSingleton<IGraphCredentialSource>(
 builder.Services.AddSingleton<ISettingsProvider, SettingsProvider>();
 
 // Admin sessions are in-process, so a restart signs everyone out. On a machine
-// in a lobby that is a feature.
+// in a lobby that is a feature. The idle timeout is read per check, because it
+// is a setting the panel can change.
 builder.Services.AddSingleton(sp => new AdminSessionStore(
     sp.GetRequiredService<IClock>(),
-    sp.GetRequiredService<IOptions<AdminOptions>>().Value.SessionIdleTimeout));
+    () => sp.GetRequiredService<ISettingsProvider>().Current.Security.SessionIdleTimeout));
 
 // Login is the one route worth rate limiting. Shared-framework feature, so no
 // package reference; the persistent lockout in the database is the part that
@@ -112,7 +113,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // Room directory: a snapshot over the settings provider, rebuilt whenever an
-// administrator edits the rooms. config/rooms.json is only the first-run seed.
+// administrator edits the rooms.
 builder.Services.AddSingleton<IRoomDirectory, SqliteBackedRoomDirectory>();
 
 builder.Services.AddSingleton<IMeetingStore, SqliteMeetingStore>();
@@ -156,22 +157,18 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CalendarSyncWorker
 
 var app = builder.Build();
 
-// Say where we are reading and writing, every start. An operator editing a
-// config file the app was never going to look at is an unpleasant way to spend
-// an afternoon, and on a wall-mounted machine the journal is the only way to
-// tell the two directories apart.
+// Say where we are reading and writing, every start. On a wall-mounted machine
+// the journal is the only way to tell which data directory won.
 app.Services.GetRequiredService<ILogger<Program>>().LogInformation(
-    "Config directory {ConfigDir}, database {DatabasePath}",
-    configDir,
-    app.Services.GetRequiredService<ZuilDatabase>().DatabasePath);
+    "Database {DatabasePath}, listening on {Url}",
+    database.DatabasePath,
+    startupSettings.Network.Url);
 
-// Settings live in the database now. Carry an existing install's config files
-// across on the first boot, then load the snapshot everything else reads from.
-// Both before the sync worker's first pass, so it never runs against defaults.
+// Put the six example rooms in on the very first run, so a new kiosk has
+// something to show while it is being set up. Guarded by a marker, so an
+// administrator who deletes them all does not find them back.
 await FirstRunSeeder.SeedAsync(
     app.Services.GetRequiredService<ISettingsStore>(),
-    builder.Configuration,
-    Path.Combine(configDir, "rooms.json"),
     app.Services.GetRequiredService<ILogger<Program>>(),
     CancellationToken.None);
 
@@ -260,10 +257,9 @@ app.Run();
 /// </summary>
 static void LaunchKiosk(WebApplication app)
 {
-    var options = app.Services
-        .GetRequiredService<IOptions<KioskOptions>>().Value;
+    var settings = app.Services.GetRequiredService<ISettingsProvider>().Current;
 
-    if (!options.LaunchBrowser)
+    if (!settings.Browser.LaunchBrowser)
     {
         return;
     }
@@ -276,11 +272,11 @@ static void LaunchKiosk(WebApplication app)
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = options.BrowserPath,
+                FileName = settings.Browser.BrowserPath,
                 ArgumentList =
                 {
                     "--kiosk",
-                    $"--app={options.Url}",
+                    $"--app={settings.Network.Url}",
                     // Nothing persists between visitors: the last person's name
                     // and meeting must not be recoverable from the browser.
                     "--incognito",
@@ -296,7 +292,8 @@ static void LaunchKiosk(WebApplication app)
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Could not launch kiosk browser at {Path}", options.BrowserPath);
+            logger.LogError(
+                ex, "Could not launch kiosk browser at {Path}", settings.Browser.BrowserPath);
         }
     });
 }

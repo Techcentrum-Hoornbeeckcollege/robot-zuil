@@ -7,6 +7,7 @@ import type {
   AdminSettingsUpdate,
   AdminTestResult,
 } from '../../api/types';
+import { DeviceCommandPanel } from './DeviceCommandPanel';
 import { errorFor, Field, NumberField, SaveActions } from './fields';
 
 interface Props {
@@ -161,6 +162,15 @@ export function DeviceSettingsForm({
       )}
 
       {test && <p className={test.ok ? 'admin-test-ok' : 'error'}>{test.message}</p>}
+
+      <Field
+        label="Commando's versturen"
+        hint="Alles wat de host naar de ESP32 kan sturen, met de waarden die elk commando
+          meeneemt. Deze lijst komt van de host zelf, dus een commando dat de firmware
+          erbij krijgt verschijnt hier automatisch."
+      >
+        <DeviceCommandPanel />
+      </Field>
     </section>
   );
 }

@@ -1,6 +1,5 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Zuil.Storage;
 
@@ -21,9 +20,15 @@ public sealed class ZuilDatabase : IDisposable
     // into an await instead of a SQLITE_BUSY exception.
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
-    public ZuilDatabase(IOptions<StorageOptions> options, ILogger<ZuilDatabase> logger)
+    /// <param name="dataDirectory">
+    /// Where the database and its key file live. Chosen by
+    /// <see cref="DataDirectory.Resolve"/> rather than configured, because the
+    /// configuration is inside the database.
+    /// </param>
+    public ZuilDatabase(string dataDirectory, ILogger<ZuilDatabase> logger)
     {
-        DatabasePath = Path.GetFullPath(options.Value.DatabasePath);
+        Directory.CreateDirectory(dataDirectory);
+        DatabasePath = Path.Combine(Path.GetFullPath(dataDirectory), "zuil-cache.db");
 
         var builder = new SqliteConnectionStringBuilder
         {
@@ -51,9 +56,7 @@ public sealed class ZuilDatabase : IDisposable
 
     /// <summary>
     /// Where the secret key lives: beside the database, so backing up one
-    /// without the other is at least an obvious mistake. /opt/zuil is already in
-    /// the unit's ReadWritePaths, unlike the single-file extraction directory,
-    /// which is versioned per binary hash and wiped on the next deploy.
+    /// without the other is at least an obvious mistake.
     /// </summary>
     public string SecretKeyPath =>
         Path.Combine(Path.GetDirectoryName(DatabasePath) ?? ".", "secret.key");

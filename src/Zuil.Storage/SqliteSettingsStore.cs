@@ -1,8 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Globalization;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Admin;
 using Zuil.Core.Models;
 using Zuil.Core.Settings;
 
@@ -20,12 +20,14 @@ namespace Zuil.Storage;
 public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
 {
     // Configuration-style colon notation, so a key reads the same here as it
-    // does in appsettings.json.
+    // used to do in a settings file.
     private const string KeyTenantId = "Graph:TenantId";
     private const string KeyClientId = "Graph:ClientId";
     private const string KeyBaseUrl = "Graph:BaseUrl";
     private const string KeyTimeZone = "Graph:TimeZone";
     private const string KeyClientSecret = "Graph:ClientSecret";
+    private const string KeyCertificatePath = "Graph:CertificatePath";
+    private const string KeyCertificatePassword = "Graph:CertificatePassword";
 
     private const string KeySyncInterval = "Sync:Interval";
     private const string KeySyncWindowBehind = "Sync:WindowBehind";
@@ -47,22 +49,28 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
     private const string KeyUpcomingCount = "Ui:UpcomingCount";
     private const string KeyShowAgendaNav = "Ui:ShowAgendaNav";
 
+    private const string KeySessionIdleTimeout = "Security:SessionIdleTimeout";
+    private const string KeyMaxFailedAttempts = "Security:MaxFailedAttempts";
+    private const string KeyLockoutWindow = "Security:LockoutWindow";
+
+    private const string KeyPort = "Network:Port";
+
+    private const string KeyLaunchBrowser = "Browser:LaunchBrowser";
+    private const string KeyBrowserPath = "Browser:BrowserPath";
+
     private const string KeySeeded = "Schema:Seeded";
 
     private readonly ZuilDatabase _db;
     private readonly AesGcmSecretProtector _protector;
-    private readonly GraphCredentialOptions _certificate;
     private readonly ILogger<SqliteSettingsStore> _logger;
 
     public SqliteSettingsStore(
         ZuilDatabase db,
         AesGcmSecretProtector protector,
-        IOptions<GraphCredentialOptions> certificate,
         ILogger<SqliteSettingsStore> logger)
     {
         _db = db;
         _protector = protector;
-        _certificate = certificate.Value;
         _logger = logger;
     }
 
@@ -78,6 +86,9 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
         var deviceDefaults = new DeviceSettings();
         var privacyDefaults = new PrivacySettings();
         var uiDefaults = new UiSettings();
+        var securityDefaults = new SecuritySettings();
+        var networkDefaults = new NetworkSettings();
+        var browserDefaults = new BrowserSettings();
 
         return new KioskSettings
         {
@@ -87,8 +98,10 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
                 ClientId = Text(values, KeyClientId, graphDefaults.ClientId),
                 BaseUrl = Text(values, KeyBaseUrl, graphDefaults.BaseUrl),
                 TimeZone = Text(values, KeyTimeZone, graphDefaults.TimeZone),
-                SecretIsSet = !string.IsNullOrWhiteSpace(Text(values, KeyClientSecret, ""))
-                    || !string.IsNullOrWhiteSpace(_certificate.CertificatePath),
+                CertificatePath = Text(values, KeyCertificatePath, graphDefaults.CertificatePath),
+                CertificatePasswordIsSet =
+                    !string.IsNullOrWhiteSpace(Text(values, KeyCertificatePassword, "")),
+                SecretIsSet = !string.IsNullOrWhiteSpace(Text(values, KeyClientSecret, "")),
             },
             Sync = new SyncSettings
             {
@@ -121,6 +134,23 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
                 UpcomingCount = Number(values, KeyUpcomingCount, uiDefaults.UpcomingCount),
                 ShowAgendaNav = Flag(values, KeyShowAgendaNav, uiDefaults.ShowAgendaNav),
             },
+            Security = new SecuritySettings
+            {
+                SessionIdleTimeout = Duration(
+                    values, KeySessionIdleTimeout, securityDefaults.SessionIdleTimeout),
+                MaxFailedAttempts = Number(
+                    values, KeyMaxFailedAttempts, securityDefaults.MaxFailedAttempts),
+                LockoutWindow = Duration(values, KeyLockoutWindow, securityDefaults.LockoutWindow),
+            },
+            Network = new NetworkSettings
+            {
+                Port = Number(values, KeyPort, networkDefaults.Port),
+            },
+            Browser = new BrowserSettings
+            {
+                LaunchBrowser = Flag(values, KeyLaunchBrowser, browserDefaults.LaunchBrowser),
+                BrowserPath = Text(values, KeyBrowserPath, browserDefaults.BrowserPath),
+            },
             Rooms = rooms,
         };
     }
@@ -136,6 +166,7 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
             [KeyClientId] = settings.Graph.ClientId,
             [KeyBaseUrl] = settings.Graph.BaseUrl,
             [KeyTimeZone] = settings.Graph.TimeZone,
+            [KeyCertificatePath] = settings.Graph.CertificatePath,
 
             [KeySyncInterval] = Iso(settings.Sync.Interval),
             [KeySyncWindowBehind] = Iso(settings.Sync.WindowBehind),
@@ -156,6 +187,15 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
             [KeyAttractView] = settings.Ui.AttractView.ToString(),
             [KeyUpcomingCount] = Int(settings.Ui.UpcomingCount),
             [KeyShowAgendaNav] = settings.Ui.ShowAgendaNav ? "true" : "false",
+
+            [KeySessionIdleTimeout] = Iso(settings.Security.SessionIdleTimeout),
+            [KeyMaxFailedAttempts] = Int(settings.Security.MaxFailedAttempts),
+            [KeyLockoutWindow] = Iso(settings.Security.LockoutWindow),
+
+            [KeyPort] = Int(settings.Network.Port),
+
+            [KeyLaunchBrowser] = settings.Browser.LaunchBrowser ? "true" : "false",
+            [KeyBrowserPath] = settings.Browser.BrowserPath,
         };
 
         using var lease = await _db.AcquireWriteAsync(ct);
@@ -224,6 +264,17 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
             "Graph client secret {Action}", stored is null ? "cleared" : "updated");
     }
 
+    public async Task SetCertificatePasswordAsync(string? password, CancellationToken ct)
+    {
+        var stored = string.IsNullOrWhiteSpace(password) ? null : _protector.Protect(password);
+
+        using var lease = await _db.AcquireWriteAsync(ct);
+        await UpsertAsync(transaction: null, KeyCertificatePassword, stored, isSecret: true, ct);
+
+        _logger.LogInformation(
+            "Graph certificate password {Action}", stored is null ? "cleared" : "updated");
+    }
+
     public async Task<bool> HasGraphSecretAsync(CancellationToken ct)
     {
         var stored = await ReadValueAsync(KeyClientSecret, ct);
@@ -246,12 +297,21 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
             secret = _protector.Unprotect(stored);
         }
 
+        var certificatePath = Text(values, KeyCertificatePath, "");
+
+        string? certificatePassword = null;
+        var storedCertificatePassword = Text(values, KeyCertificatePassword, "");
+        if (!string.IsNullOrWhiteSpace(storedCertificatePassword))
+        {
+            certificatePassword = _protector.Unprotect(storedCertificatePassword);
+        }
+
         var credentials = new GraphCredentials(
             TenantId: tenantId,
             ClientId: clientId,
             ClientSecret: secret,
-            CertificatePath: _certificate.CertificatePath,
-            CertificatePassword: _certificate.CertificatePassword);
+            CertificatePath: string.IsNullOrWhiteSpace(certificatePath) ? null : certificatePath,
+            CertificatePassword: certificatePassword);
 
         return credentials.IsComplete ? credentials : null;
     }
@@ -263,6 +323,49 @@ public sealed class SqliteSettingsStore : ISettingsStore, IGraphCredentialSource
     {
         using var lease = await _db.AcquireWriteAsync(ct);
         await UpsertAsync(transaction: null, KeySeeded, "1", isSecret: false, ct);
+    }
+
+    public async Task<AdminCredential?> GetAdminCredentialAsync(CancellationToken ct)
+    {
+        await using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT username, password_hash, is_default FROM admin_credential WHERE id = 1;
+            """;
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return null;
+        }
+
+        return new AdminCredential(
+            Username: reader.GetString(0),
+            PasswordHash: reader.GetString(1),
+            IsDefault: reader.GetInt32(2) != 0);
+    }
+
+    public async Task SetAdminCredentialAsync(AdminCredential credential, CancellationToken ct)
+    {
+        using var lease = await _db.AcquireWriteAsync(ct);
+
+        await using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO admin_credential (id, username, password_hash, is_default, updated_utc)
+            VALUES (1, $username, $hash, $default, $now)
+            ON CONFLICT (id) DO UPDATE
+               SET username      = excluded.username,
+                   password_hash = excluded.password_hash,
+                   is_default    = excluded.is_default,
+                   updated_utc   = excluded.updated_utc;
+            """;
+        cmd.Parameters.AddWithValue("$username", credential.Username);
+        cmd.Parameters.AddWithValue("$hash", credential.PasswordHash);
+        cmd.Parameters.AddWithValue("$default", credential.IsDefault ? 1 : 0);
+        cmd.Parameters.AddWithValue("$now", Timestamp());
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        // Deliberately no value, and no indication of length.
+        _logger.LogInformation("Admin credentials updated");
     }
 
     public async Task RecordLoginAttemptAsync(DateTimeOffset at, bool succeeded, CancellationToken ct)

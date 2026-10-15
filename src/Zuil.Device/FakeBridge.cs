@@ -1,11 +1,16 @@
 using Microsoft.Extensions.Logging;
 using Zuil.Core.Abstractions;
+using Zuil.Core.Devices;
 
 namespace Zuil.Device;
 
 /// <summary>
 /// Logs instead of touching hardware, so the kiosk runs end-to-end on a laptop.
 /// Selected with --fake-device, and the default whenever no i2c bus is present.
+///
+/// It answers from the catalogue rather than from a list of its own, so a newly
+/// declared command is exercisable in the dev loop — including from the admin
+/// screen — before any firmware exists for it.
 /// </summary>
 public sealed class FakeBridge : IDeviceBridge
 {
@@ -17,22 +22,33 @@ public sealed class FakeBridge : IDeviceBridge
 
     public event EventHandler<DeviceEvent>? DeviceEventReceived;
 
-    public Task<bool> PingAsync(CancellationToken ct)
+    public Task<DeviceReply?> SendAsync(DeviceInstruction instruction, CancellationToken ct)
     {
-        _logger.LogInformation("[fake device] ping");
-        return Task.FromResult(true);
-    }
+        var payload = Convert.ToHexString(instruction.Payload.Span);
 
-    public Task ShowDirectionAsync(byte signalId, CancellationToken ct)
-    {
-        _logger.LogInformation("[fake device] show direction signal {SignalId}", signalId);
-        return Task.CompletedTask;
-    }
+        _logger.LogInformation(
+            "[fake device] {Command} {Payload}",
+            instruction.Capability.Key,
+            payload.Length == 0 ? "(no payload)" : payload);
 
-    public Task ClearAsync(CancellationToken ct)
-    {
-        _logger.LogInformation("[fake device] clear");
-        return Task.CompletedTask;
+        if (!instruction.ExpectsReply)
+        {
+            return Task.FromResult<DeviceReply?>(null);
+        }
+
+        // PING answers PONG, everything else ACKs with the payload echoed back,
+        // which is what the real firmware does and what the admin screen shows.
+        var code = instruction.Command is DeviceCommand.Ping
+            ? (byte)DeviceResponse.Pong
+            : (byte)DeviceResponse.Ack;
+
+        return Task.FromResult<DeviceReply?>(new DeviceReply
+        {
+            Code = code,
+            Payload = instruction.Payload,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            RoundTrip = TimeSpan.Zero,
+        });
     }
 
     /// <summary>Lets tests push a synthetic device event through the pipeline.</summary>

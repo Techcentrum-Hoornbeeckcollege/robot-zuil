@@ -72,9 +72,10 @@ RELEASE_ID="$(date +%Y%m%d_%H%M%S)"
 RELEASE_DIR="$DEST/releases/$RELEASE_ID"
 
 echo "==> Staging new release to $RELEASE_DIR"
-# config/ and data/ live OUTSIDE the release directory on purpose: a release is
-# disposable, and everything the operator sets up has to outlive it.
-mkdir -p "$RELEASE_DIR" /var/cache/zuil/extract "$DEST/config" "$DEST/data"
+# Only the release goes here. There is nothing to seed and nothing to preserve:
+# the kiosk keeps everything in /var/lib/zuil, which systemd creates and owns
+# (StateDirectory in zuil.service), so a release directory is fully disposable.
+mkdir -p "$RELEASE_DIR" /var/cache/zuil/extract
 cp -r "$SRC/." "$RELEASE_DIR/"
 chmod +x "$RELEASE_DIR/zuil"
 # Ensure all shell/executable scripts in release and scripts folder have execute permissions
@@ -84,50 +85,8 @@ echo "==> Updating active symlink"
 ln -sfn "$RELEASE_DIR" "$DEST/current"
 echo "$RELEASE_ID" > "$DEST/version"
 
-echo "==> Seeding the persistent config directory"
-# Seed only what is missing. An update must never overwrite these: the room list
-# and the production settings are the operator's, not the release's.
-if [ ! -f "$DEST/config/appsettings.Production.json" ] \
-   && [ -f "$RELEASE_DIR/config/appsettings.Production.json.example" ]; then
-  cp "$RELEASE_DIR/config/appsettings.Production.json.example" \
-     "$DEST/config/appsettings.Production.json"
-  echo "    created appsettings.Production.json"
-fi
-
-# rooms.json is read once, on the very first start, to populate the room table.
-# It has to be in the persistent directory, because that is the one the app
-# reads (ZUIL_CONFIG_DIR, below).
-if [ ! -f "$DEST/config/rooms.json" ] && [ -f "$RELEASE_DIR/config/rooms.json" ]; then
-  cp "$RELEASE_DIR/config/rooms.json" "$DEST/config/"
-  echo "    created rooms.json"
-fi
-
-# The environment the service and runzuil.sh both read. Written once and then
-# left alone, so an update never regenerates the admin password.
-#
-# ZUIL_CONFIG_DIR is the important one: without it the app reads
-# $RELEASE_DIR/config, which this script does not write and the next release
-# replaces — so every setting would silently revert on update.
-if [ ! -f "$DEST/config/.env" ]; then
-  GENERATED_PASSWORD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)" || true
-  cat > "$DEST/config/.env" <<EOF
-# Written by scripts/installzuil.sh on $(date -Is). Safe to edit; not overwritten.
-ZUIL_CONFIG_DIR=$DEST/config
-ZUIL_Storage__DatabasePath=$DEST/data/zuil-cache.db
-ZUIL_Admin__Password=$GENERATED_PASSWORD
-EOF
-  echo "    created .env with a generated admin password"
-fi
-
 echo "==> Setting secure permissions"
 chown -R zuil:zuil "$DEST" /var/cache/zuil
-# Both hold credentials: a certificate password in one, the admin password in
-# the other. The database and secret.key under data/ are written by the service.
-for f in "$DEST/config/appsettings.Production.json" "$DEST/config/.env"; do
-  if [ -f "$f" ]; then
-    chmod 600 "$f"
-  fi
-done
 
 echo "==> Installing systemd units"
 # Copy directly from the repository deploy/ folder or fallback to local dir
@@ -157,19 +116,13 @@ echo "Done! Installation/Update successful."
 echo "Start with:  systemctl start zuil zuil-kiosk"
 echo "Logs:        journalctl -u zuil -f"
 echo
-
-if [ -n "${GENERATED_PASSWORD:-}" ]; then
-  echo "Admin password:  $GENERATED_PASSWORD"
-  echo "                 Stored in $DEST/config/.env. This is the only time it is"
-  echo "                 printed, so write it down now."
-  echo
-  echo "Then, at the kiosk itself:"
-  echo "  1. Hold the bottom-right corner of the screen for three seconds."
-  echo "  2. Log in and fill in Outlook: tenant, client id and client secret."
-  echo "  3. Check the rooms under Zalen."
-  echo "  See docs/admin.md."
-  echo
-fi
-
-echo "Back up $DEST/data/zuil-cache.db and $DEST/data/secret.key together:"
-echo "either one alone cannot recover the Outlook credential."
+echo "Then, at the kiosk itself - nothing else needs editing over SSH:"
+echo "  1. Tap Instellingen at the bottom of the screen."
+echo "  2. Log in with  admin / password"
+echo "  3. Change those under Account. Until you do, anyone who knows this"
+echo "     project can open the settings panel from the lobby."
+echo "  4. Fill in Outlook: tenant, client id and client secret."
+echo "  See docs/admin.md."
+echo
+echo "Everything is kept in /var/lib/zuil. Back up zuil-cache.db and secret.key"
+echo "together: either one alone cannot recover the Outlook credential."

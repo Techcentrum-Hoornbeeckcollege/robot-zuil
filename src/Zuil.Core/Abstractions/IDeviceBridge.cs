@@ -1,26 +1,32 @@
+using Zuil.Core.Devices;
+
 namespace Zuil.Core.Abstractions;
 
 /// <summary>
 /// Talks to the ESP32 that drives the physical wayfinding indicators.
 ///
-/// The transport lives entirely behind this interface. The default
+/// One method, deliberately. The commands are described as data in
+/// <see cref="DeviceCatalogue"/>, so teaching the kiosk a new one — a height, a
+/// colour, an animation — does not add a method here, which means it does not
+/// touch the i2c implementation, the fake, or the rate limiter either.
+///
+/// The transport also lives entirely behind this interface. The default
 /// implementation is i2c with the Pi as master, but ESP32 i2c-slave support is
 /// the fragile part of that design — if it misbehaves on the bench, a UART
 /// implementation drops in here without touching anything else.
 /// </summary>
 public interface IDeviceBridge
 {
-    /// <summary>True once the device has answered a ping.</summary>
+    /// <summary>True while the device is answering.</summary>
     bool IsConnected { get; }
 
-    /// <summary>Round-trips a ping to confirm the device is alive and framing works.</summary>
-    Task<bool> PingAsync(CancellationToken ct);
-
-    /// <summary>Lights the indicator that points at the given room.</summary>
-    Task ShowDirectionAsync(byte signalId, CancellationToken ct);
-
-    /// <summary>Returns the column to its idle/attract state.</summary>
-    Task ClearAsync(CancellationToken ct);
+    /// <summary>
+    /// Sends one validated instruction and returns what came back, or null when
+    /// the command was dropped (rate limit) or never acknowledged (bus failure
+    /// after retries). A null is a normal outcome on a wall-mounted machine, not
+    /// an exception: the kiosk keeps serving with a dark column.
+    /// </summary>
+    Task<DeviceReply?> SendAsync(DeviceInstruction instruction, CancellationToken ct);
 
     /// <summary>
     /// Raised when the device signals it has something to report over the

@@ -11,11 +11,8 @@ if [ ! -d "$CURRENT" ]; then
   exit 1
 fi
 
-if [ -f "$DEST/config/.env" ]; then
-  set -a
-  source "$DEST/config/.env"
-  set +a
-fi
+# Nothing to source: there is no configuration file and no environment file.
+# The kiosk keeps everything in /var/lib/zuil and is set up from its own screen.
 
 exec "$CURRENT/zuil"
 

@@ -21,9 +21,13 @@ public sealed class AdminSessionStore
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSeen = new(StringComparer.Ordinal);
     private readonly IClock _clock;
-    private readonly TimeSpan _idleTimeout;
+    private readonly Func<TimeSpan> _idleTimeout;
 
-    public AdminSessionStore(IClock clock, TimeSpan idleTimeout)
+    /// <param name="idleTimeout">
+    /// Read on every check rather than captured, because it is a setting an
+    /// administrator can change from the panel they are sitting in.
+    /// </param>
+    public AdminSessionStore(IClock clock, Func<TimeSpan> idleTimeout)
     {
         _clock = clock;
         _idleTimeout = idleTimeout;
@@ -40,12 +44,13 @@ public sealed class AdminSessionStore
     public bool Validate(string tokenHash)
     {
         var now = _clock.Now;
+        var idleTimeout = _idleTimeout();
 
         // Sweep on access rather than on a timer: there are never more than a
         // handful of entries, and a background timer is a thread for nothing.
         foreach (var (hash, seen) in _lastSeen)
         {
-            if (now - seen > _idleTimeout)
+            if (now - seen > idleTimeout)
             {
                 _lastSeen.TryRemove(hash, out _);
             }
@@ -56,7 +61,7 @@ public sealed class AdminSessionStore
             return false;
         }
 
-        if (now - lastSeen > _idleTimeout)
+        if (now - lastSeen > idleTimeout)
         {
             _lastSeen.TryRemove(tokenHash, out _);
             return false;

@@ -1,4 +1,5 @@
 using Zuil.Core.Abstractions;
+using Zuil.Core.Devices;
 
 namespace Zuil.Device;
 
@@ -12,21 +13,18 @@ namespace Zuil.Device;
 /// </summary>
 public sealed class CommandPolicy
 {
-    private static readonly HashSet<DeviceCommand> Allowed =
-    [
-        DeviceCommand.Ping,
-        DeviceCommand.ShowDirection,
-        DeviceCommand.Clear,
-        DeviceCommand.ReadEvent,
-    ];
-
     private readonly ISettingsProvider _settings;
     private readonly Lock _gate = new();
     private readonly Queue<DateTimeOffset> _recent = new();
 
     public CommandPolicy(ISettingsProvider settings) => _settings = settings;
 
-    public bool IsAllowed(DeviceCommand command) => Allowed.Contains(command);
+    /// <summary>
+    /// Only commands the catalogue declares reach the bus. The allowlist used
+    /// to be a second copy of that list here, which is one list too many: the
+    /// catalogue is what the GUI and the API already work from.
+    /// </summary>
+    public bool IsAllowed(DeviceCommand command) => DeviceCatalogue.IsDeclared(command);
 
     public bool TryAcquire(DateTimeOffset now)
     {

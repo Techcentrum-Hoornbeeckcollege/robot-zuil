@@ -7,7 +7,7 @@ namespace Zuil.Host;
 /// The rooms this column serves, as a lock-free snapshot over the settings
 /// provider.
 ///
-/// Replaces the old RoomDirectory, which read config/rooms.json once at startup
+/// Replaces the old RoomDirectory, which read a rooms.json file once at startup
 /// and could never change. Room names, floors and walking directions are exactly
 /// the settings most likely to need editing, and doing that over SSH on a Pi
 /// bolted to a wall was the thing this whole change set out to fix.

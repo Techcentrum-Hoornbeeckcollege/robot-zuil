@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.Json;
 using Zuil.Core.Abstractions;
 using Zuil.Core.Models;
 using Zuil.Core.Settings;
@@ -5,153 +7,79 @@ using Zuil.Core.Settings;
 namespace Zuil.Host.Settings;
 
 /// <summary>
-/// Moves an existing installation's configuration into the database, once.
+/// Puts a starter set of rooms in on the very first run.
 ///
-/// This is what makes the admin panel a non-breaking upgrade: a Pi that already
-/// has a populated config/appsettings.Production.json and config/rooms.json keeps
-/// behaving identically after the update, because its old values are copied
-/// across on the first boot — including its client secret, which gets encrypted
-/// on the way in.
+/// The list is an embedded resource rather than a file beside the binary,
+/// because after 0.3 there are no files beside the binary — that is the whole
+/// point of the release. It exists so a kiosk that has just been plugged in has
+/// something on screen while someone sets it up, not as a way to configure
+/// anything: edit the rooms under Instellingen → Zalen.
 ///
-/// Guarded by a marker rather than by "is the room table empty", so an
-/// administrator who deliberately deletes every room does not find them back
-/// after the next restart.
+/// Guarded by a marker row rather than by "is the room table empty", so an
+/// administrator who deliberately deletes every room does not find them back on
+/// the next restart.
 /// </summary>
 public static class FirstRunSeeder
 {
-    public static async Task SeedAsync(
-        ISettingsStore store,
-        IConfiguration configuration,
-        string roomsFilePath,
-        ILogger logger,
-        CancellationToken ct)
+    private const string ResourceName = "Zuil.Host.Settings.default-rooms.json";
+
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    public static async Task SeedAsync(ISettingsStore store, ILogger logger, CancellationToken ct)
     {
         if (await store.IsSeededAsync(ct))
         {
             return;
         }
 
-        logger.LogInformation("First run: seeding settings from configuration files");
-
-        var settings = ReadFromConfiguration(configuration);
-        var rooms = RoomsFile.Read(roomsFilePath);
-
-        // Validate what we are about to import, but do not refuse to start over
-        // it: the old config may well have a problem the admin panel is now the
-        // right place to fix. Importing it and complaining beats refusing to boot.
-        var errors = SettingsValidator.Validate(settings with { Rooms = rooms });
-        foreach (var error in errors)
-        {
-            logger.LogWarning(
-                "Seeded configuration is questionable at {Field}: {Message}",
-                error.Field, error.Message);
-        }
-
-        await store.SaveAsync(settings, ct);
+        var rooms = ReadDefaults(logger);
 
         if (rooms.Count > 0)
         {
-            // Skip rooms that would violate a unique index, rather than failing
-            // the whole seed and leaving the kiosk with none at all.
-            var usable = Deduplicate(rooms, logger);
-            await store.SaveRoomsAsync(usable, ct);
-            logger.LogInformation("Seeded {Count} rooms from {Path}", usable.Count, roomsFilePath);
-        }
-        else
-        {
-            logger.LogWarning(
-                "No rooms found at {Path}. The kiosk will start with an empty directory; "
-                + "add rooms from Instellingen → Zalen.",
-                roomsFilePath);
-        }
+            // Validate what we are about to import, but do not refuse to start
+            // over it: the kiosk is more useful with an imperfect room list than
+            // with none, and the panel is where it gets fixed.
+            foreach (var error in SettingsValidator.ValidateRooms(rooms))
+            {
+                logger.LogWarning(
+                    "Default room list is questionable at {Field}: {Message}",
+                    error.Field, error.Message);
+            }
 
-        var secret = configuration["Graph:ClientSecret"];
-        if (!string.IsNullOrWhiteSpace(secret))
-        {
-            await store.SetGraphSecretAsync(secret, ct);
-            logger.LogInformation(
-                "Imported the Graph client secret from configuration and encrypted it. "
-                + "Remove it from config/appsettings.Production.json now; it is no longer read.");
+            await store.SaveRoomsAsync(rooms, ct);
+            logger.LogInformation("Seeded {Count} example rooms", rooms.Count);
         }
 
         await store.MarkSeededAsync(ct);
     }
 
-    /// <summary>
-    /// Pulls the old file-based settings across, falling back to each record's
-    /// own default where a key was never set.
-    ///
-    /// Written out key by key rather than bound reflectively so that it is
-    /// obvious exactly which settings migrate, and so a renamed property cannot
-    /// silently stop carrying a value forward.
-    /// </summary>
-    private static KioskSettings ReadFromConfiguration(IConfiguration configuration)
+    private static IReadOnlyList<Room> ReadDefaults(ILogger logger)
     {
-        var graph = new GraphSettings();
-        var sync = new SyncSettings();
-        var device = new DeviceSettings();
-        var privacy = new PrivacySettings();
-        var ui = new UiSettings();
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName);
 
-        return new KioskSettings
+        if (stream is null)
         {
-            Graph = new GraphSettings
-            {
-                TenantId = configuration["Graph:TenantId"] ?? graph.TenantId,
-                ClientId = configuration["Graph:ClientId"] ?? graph.ClientId,
-                BaseUrl = configuration["Graph:BaseUrl"] ?? graph.BaseUrl,
-                TimeZone = configuration["Graph:TimeZone"] ?? graph.TimeZone,
-            },
-            Sync = new SyncSettings
-            {
-                Interval = configuration.GetValue("Sync:Interval", sync.Interval),
-                WindowBehind = configuration.GetValue("Sync:WindowBehind", sync.WindowBehind),
-                WindowAhead = configuration.GetValue("Sync:WindowAhead", sync.WindowAhead),
-                StaleAfter = configuration.GetValue("Sync:StaleAfter", sync.StaleAfter),
-                // Retention used to live under Storage, which is where an
-                // upgrading install still has it.
-                RetainPastMeetingsFor = configuration.GetValue(
-                    "Storage:RetainPastMeetingsFor", sync.RetainPastMeetingsFor),
-            },
-            Device = new DeviceSettings
-            {
-                BusId = configuration.GetValue("Device:BusId", device.BusId),
-                Address = configuration.GetValue("Device:Address", device.Address),
-                AttentionPin = configuration.GetValue("Device:AttentionPin", device.AttentionPin),
-                ResponseDelay = configuration.GetValue("Device:ResponseDelay", device.ResponseDelay),
-                MaxRetries = configuration.GetValue("Device:MaxRetries", device.MaxRetries),
-                MaxCommandsPerSecond = configuration.GetValue(
-                    "Device:MaxCommandsPerSecond", device.MaxCommandsPerSecond),
-            },
-            // Nothing in the old config matches these, and the defaults are the
-            // conservative choice: subjects hidden.
-            Privacy = privacy,
-            Ui = ui,
-        };
-    }
-
-    private static IReadOnlyList<Room> Deduplicate(
-        IReadOnlyList<Room> rooms, ILogger logger)
-    {
-        var kept = new List<Room>(rooms.Count);
-        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var mailboxes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var signals = new HashSet<byte>();
-
-        foreach (var room in rooms)
-        {
-            if (!ids.Add(room.Id) || !mailboxes.Add(room.Mailbox) || !signals.Add(room.SignalId))
-            {
-                logger.LogWarning(
-                    "Skipping room {RoomId} while seeding: its id, mailbox or indicator "
-                    + "duplicates an earlier room",
-                    room.Id);
-                continue;
-            }
-
-            kept.Add(room);
+            logger.LogWarning(
+                "No embedded default room list; starting with none. Add rooms under "
+                + "Instellingen → Zalen.");
+            return [];
         }
 
-        return kept;
+        try
+        {
+            return JsonSerializer.Deserialize<List<Room>>(stream, Options) ?? [];
+        }
+        catch (JsonException ex)
+        {
+            // A broken resource is a build problem, not something an operator
+            // can fix, and it must not stop the kiosk starting.
+            logger.LogError(ex, "The embedded default room list could not be read");
+            return [];
+        }
     }
 }
