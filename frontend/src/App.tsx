@@ -10,6 +10,7 @@ import { NameSearch } from './features/search/NameSearch';
 import { useIdleReset } from './hooks/useIdleReset';
 import { useKioskConfig } from './hooks/useKioskConfig';
 import { useStatusHub } from './hooks/useStatusHub';
+import { useHealth } from './hooks/useHealth';
 import { KioskShell } from './shell/KioskShell';
 import { useShell } from './shell/useShell';
 import { holdsVisitorData, restingKind } from './shell/viewState';
@@ -30,6 +31,10 @@ export function App() {
 
   const { view, go, reset } = useShell(resting);
   const { session, error, busy, login, logout } = useAdminSession();
+
+  // Polled rather than pushed: the hub only reports cache and settings
+  // changes, and a backend that has fallen over cannot tell anyone so.
+  const health = useHealth();
 
   // Bumped by the hub so the agenda views re-fetch without polling.
   const [cacheNonce, setCacheNonce] = useState(0);
@@ -65,6 +70,7 @@ export function App() {
     <KioskShell
       view={view}
       showAgendaNav={config.showAgendaNav}
+      health={health.level}
       onNavigate={(next) =>
         // The Settings tab leads to the login, unless this browser already has
         // a live session — then straight in.

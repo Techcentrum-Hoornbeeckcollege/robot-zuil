@@ -504,7 +504,13 @@ public static class AdminEndpoints
                 RoomCount: current.Rooms.Count,
                 ActiveSessions: sessions.Count,
                 CredentialsAreDefault: credential?.IsDefault ?? true,
-                DataDirectory: System.IO.Path.GetDirectoryName(database.DatabasePath) ?? ""));
+                DataDirectory: System.IO.Path.GetDirectoryName(database.DatabasePath) ?? "",
+                Status: HealthEvaluation.Evaluate(
+                    status,
+                    clock.IsSynchronized,
+                    device.IsConnected,
+                    clock.Now,
+                    current.Sync.StaleAfter).ToString()));
         });
 
         admin.MapGet("/settings/export", async (
@@ -925,4 +931,5 @@ public sealed record AdminDiagnosticsResponse(
     int RoomCount,
     int ActiveSessions,
     bool CredentialsAreDefault,
-    string DataDirectory);
+    string DataDirectory,
+    string Status);
