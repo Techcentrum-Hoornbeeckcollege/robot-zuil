@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the Robot Zuil updater when requested
+
+[Path]
+PathExists=/run/zuil-update/request
+Unit=zuil-update.service
+
+[Install]
+WantedBy=multi-user.target
