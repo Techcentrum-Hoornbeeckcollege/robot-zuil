@@ -33,8 +33,9 @@ ssh zuil-pi 'cd /tmp && unzip -o zuil-linux-arm64.zip -d zuil-release \
   && sudo ./zuil-release/scripts/installzuil.sh ./zuil-release/linux-arm64'
 ```
 
-That creates the `zuil` user, grants i2c/gpio access, enables the bus, installs
-both systemd units, and **generates a random admin password, printing it once**.
+That installs system dependencies (ICU for .NET globalization, curl for health
+checks), creates the `zuil` user, grants i2c/gpio access, enables the bus,
+installs both systemd units, and **generates a random admin password, printing it once**.
 Write it down.
 
 ```bash
